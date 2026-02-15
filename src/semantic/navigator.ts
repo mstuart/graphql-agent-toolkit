@@ -1,4 +1,4 @@
-import type { ParsedSchema, SchemaType } from '../types/index.js';
+import type { ParsedSchema } from '../types/index.js';
 import { tokenize } from './tokenizer.js';
 
 export interface SearchResult {

@@ -1,4 +1,4 @@
-import type { ParsedSchema, SchemaField, SchemaType } from '../types/index.js';
+import type { ParsedSchema, SchemaField } from '../types/index.js';
 import { typeRefToString, isRequired, unwrapType } from './variables.js';
 
 export interface VariableDefinition {

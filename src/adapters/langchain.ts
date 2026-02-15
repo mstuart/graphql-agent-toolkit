@@ -14,7 +14,7 @@ export interface LangChainToolConfig {
 export interface StructuredToolConfig {
   name: string;
   description: string;
-  schema: z.ZodObject<any>;
+  schema: z.ZodObject<Record<string, z.ZodType>>;
   func: (input: Record<string, unknown>) => Promise<string>;
 }
 
@@ -159,7 +159,7 @@ function buildJsonSchema(
 function buildZodSchema(
   field: SchemaField,
   schema: ParsedSchema,
-): z.ZodObject<any> {
+): z.ZodObject<Record<string, z.ZodType>> {
   const shape: Record<string, z.ZodType> = {};
 
   for (const arg of field.args) {

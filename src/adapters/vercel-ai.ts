@@ -6,7 +6,7 @@ import type { GraphQLExecutor } from '../mcp/executor.js';
 
 export interface VercelAIToolConfig {
   description: string;
-  parameters: z.ZodObject<any>;
+  parameters: z.ZodObject<Record<string, z.ZodType>>;
   execute: (args: Record<string, unknown>) => Promise<string>;
 }
 
@@ -73,7 +73,7 @@ function typeRefToZod(typeRef: TypeRef, schema: ParsedSchema): z.ZodType {
 function buildParametersSchema(
   field: SchemaField,
   schema: ParsedSchema,
-): z.ZodObject<any> {
+): z.ZodObject<Record<string, z.ZodType>> {
   const shape: Record<string, z.ZodType> = {};
 
   for (const arg of field.args) {
