@@ -35,12 +35,12 @@ function convertField(field: {
   name: string;
   description?: string | null;
   type: { kind: string; name?: string | null; ofType?: unknown };
-  args?: Array<{
+  args?: readonly {
     name: string;
     description?: string | null;
     type: { kind: string; name?: string | null; ofType?: unknown };
     defaultValue?: string | null;
-  }>;
+  }[];
   isDeprecated?: boolean;
 }): SchemaField {
   return {
