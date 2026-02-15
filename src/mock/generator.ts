@@ -1,7 +1,6 @@
-import type { ParsedSchema, SchemaType, SchemaField, TypeRef } from '../types/index.js';
+import type { ParsedSchema, SchemaField, TypeRef } from '../types/index.js';
 import { unwrapType } from '../operations/variables.js';
 import { GraphQLExecutor } from '../mcp/executor.js';
-import { buildOperation } from '../operations/index.js';
 
 export interface MockConfig {
   seed?: number;
@@ -266,7 +265,7 @@ export function createMockExecutor(
   const mockExecutor = Object.create(GraphQLExecutor.prototype) as GraphQLExecutor;
 
   // Override the execute method
-  (mockExecutor as any).execute = async (
+  (mockExecutor as unknown as Record<string, unknown>).execute = async (
     operation: string,
     _variables?: Record<string, unknown>,
     _additionalHeaders?: Record<string, string>,
