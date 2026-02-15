@@ -6,6 +6,8 @@ import { parseSchema } from '../introspection/parser.js';
 import { GraphQLExecutor } from './executor.js';
 import { createToolsFromSchema } from './tool-factory.js';
 
+const packageVersion = process.env.PACKAGE_VERSION || '0.1.0';
+
 export interface AgentToolkitServerOptions {
   serverName?: string;
   serverVersion?: string;
@@ -19,7 +21,7 @@ export async function createAgentToolkitServer(
   options?: AgentToolkitServerOptions,
 ): Promise<McpServer> {
   const serverName = options?.serverName ?? 'graphql-agent-toolkit';
-  const serverVersion = options?.serverVersion ?? '0.1.0';
+  const serverVersion = options?.serverVersion ?? packageVersion;
 
   // Fetch and parse schema
   const introspectionResult = await fetchSchema({
