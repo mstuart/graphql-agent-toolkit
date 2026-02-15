@@ -4,12 +4,14 @@ import { Command } from 'commander';
 import { runInit } from './cli/init.js';
 import { runServe } from './cli/serve.js';
 
+const version = process.env.PACKAGE_VERSION || '0.1.0';
+
 const program = new Command();
 
 program
   .name('graphql-agent-toolkit')
   .description('Turn any GraphQL API into AI-agent-ready tools')
-  .version('0.1.0');
+  .version(version);
 
 program
   .command('init')
