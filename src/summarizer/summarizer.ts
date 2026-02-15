@@ -131,7 +131,7 @@ function renderMarkdown(value: unknown, indent: number): string {
     if (value.length === 0) return '(empty list)';
 
     const lines: string[] = [];
-    const meta = (value as any)._meta;
+    const meta = (value as unknown as Record<string, unknown>)._meta as { totalCount: number; showing: number } | undefined;
 
     for (const item of value) {
       if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
