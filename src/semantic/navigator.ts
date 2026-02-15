@@ -178,7 +178,8 @@ export class SchemaNavigator {
 
     this.idf = new Map();
     for (const [term, freq] of termDocFreq) {
-      this.idf.set(term, Math.log(docCount / freq));
+      // Use smoothed IDF to avoid zero values when a term appears in all documents
+      this.idf.set(term, Math.log(1 + docCount / (1 + freq)));
     }
   }
 
@@ -190,7 +191,7 @@ export class SchemaNavigator {
 
     const tfidf = new Map<string, number>();
     for (const [term, count] of tf) {
-      const idfVal = this.idf.get(term) ?? Math.log(this.documents.length);
+      const idfVal = this.idf.get(term) ?? Math.log(1 + this.documents.length);
       tfidf.set(term, (count / tokens.length) * idfVal);
     }
 
