@@ -6,3 +6,5 @@ export type {
   SchemaArgument,
   TypeRef,
 } from './types/index.js';
+
+export { fetchSchema, parseSchema } from './introspection/index.js';
