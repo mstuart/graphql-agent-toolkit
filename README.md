@@ -28,6 +28,10 @@ npm install graphql-agent-toolkit
 - **Operation Builder** -- Generates queries and mutations with proper variable definitions and nested selection sets
 - **MCP Server** -- Creates a fully functional MCP server with tools for every query and mutation
 - **Semantic Search** -- TF-IDF powered schema navigator to find relevant types and fields
+- **Pagination Handling** -- Auto-detects and handles Relay and offset pagination across multiple pages
+- **Result Summarization** -- Truncate large responses for LLM context windows with markdown formatting
+- **Framework Adapters** -- Generate tools for LangChain, CrewAI, and Vercel AI SDK with zero framework dependencies
+- **Mock Data Generation** -- Generate deterministic mock data from your schema with `@mock()` directive support
 - **CLI** -- Command-line interface for quick setup and serving
 - **Dual Format** -- Ships as both ESM and CJS with full TypeScript types
 
@@ -114,6 +118,119 @@ const context = navigator.getTypeContext('User');
 console.log(context);
 ```
 
+### Result Summarization
+
+Truncate large GraphQL responses to fit within LLM context windows:
+
+```typescript
+import { summarizeResponse, formatForLLM } from 'graphql-agent-toolkit';
+
+// Summarize a large response
+const { summary, metadata } = summarizeResponse(largeResponse, {
+  maxItems: 5,        // max array items to include
+  maxDepth: 3,        // max nesting depth
+  maxStringLength: 200, // truncate long strings
+  includeMetadata: true, // add _meta with counts
+});
+
+console.log(metadata);
+// { totalItems: 1500, truncated: true, originalSize: 48230 }
+
+// Format as clean markdown for LLM context
+const markdown = formatForLLM(largeResponse, { maxItems: 10 });
+console.log(markdown);
+```
+
+### Framework Adapters
+
+Generate tools for popular AI frameworks -- no framework dependencies required.
+
+#### LangChain
+
+```typescript
+import { createLangChainTools, createStructuredTools } from 'graphql-agent-toolkit';
+
+// Basic tools (input is JSON string)
+const tools = createLangChainTools(schema, executor, { maxDepth: 2 });
+
+// Structured tools with Zod schemas (for @langchain/core StructuredTool)
+const structuredTools = createStructuredTools(schema, executor);
+
+for (const tool of tools) {
+  console.log(`${tool.name}: ${tool.description}`);
+  // tool.func(jsonString) -> Promise<string>
+}
+```
+
+#### CrewAI
+
+```typescript
+import { createCrewAITools } from 'graphql-agent-toolkit';
+
+const tools = createCrewAITools(schema, executor);
+
+for (const tool of tools) {
+  console.log(`${tool.name}: ${tool.description}`);
+  // tool.args_schema is a JSON Schema object
+  // tool.func(argsObject) -> Promise<string>
+}
+```
+
+#### Vercel AI SDK
+
+```typescript
+import { createVercelAITools } from 'graphql-agent-toolkit';
+
+const tools = createVercelAITools(schema, executor);
+
+// Returns Record<string, { description, parameters: ZodSchema, execute }>
+// Use directly with Vercel AI SDK's tool() function
+for (const [name, tool] of Object.entries(tools)) {
+  console.log(`${name}: ${tool.description}`);
+  // tool.parameters is a Zod schema
+  // tool.execute(args) -> Promise<string>
+}
+```
+
+### Mock Data Generation
+
+Generate deterministic mock data from your schema for testing:
+
+```typescript
+import { generateMockData, createMockExecutor } from 'graphql-agent-toolkit';
+
+// Generate mock data for a specific type
+const mockUser = generateMockData(schema, 'User', {
+  seed: 42,         // deterministic output
+  arrayLength: 3,   // items per list field
+  maxDepth: 3,      // max recursion depth
+});
+console.log(mockUser);
+// { id: 'id_id_0', name: 'mock_name', posts: [...] }
+
+// Create a drop-in mock executor (no HTTP calls)
+const mockExecutor = createMockExecutor(schema, { seed: 42 });
+
+// Use it anywhere a GraphQLExecutor is expected
+const result = await mockExecutor.execute(
+  'query { user(id: "1") { id name } }',
+  { id: '1' }
+);
+```
+
+Use the `@mock()` directive in field descriptions for custom values:
+
+```graphql
+type Product {
+  "The product name @mock(\"Widget Pro\")"
+  name: String!
+  "Current price in USD @mock(29.99)"
+  price: Float!
+  "Whether the product is in stock @mock(true)"
+  inStock: Boolean!
+}
+```
+
 ## CLI Usage
 
 ### `init` -- Introspect and generate config
@@ -190,6 +307,28 @@ The `AgentToolkitConfig` object accepts:
   - `.search(query, limit?)` -- Search for relevant types
   - `.getTypeContext(typeName)` -- Get formatted context for a type
 
+### Pagination
+
+- `executePaginated(executor, operation, variables, config?)` -- Execute a paginated query, collecting all pages
+- `detectPaginationStyle(schema, typeName)` -- Auto-detect Relay or offset pagination from a type
+
+### Summarization
+
+- `summarizeResponse(data, config?)` -- Truncate arrays, limit depth, and shorten strings in a response
+- `formatForLLM(data, config?)` -- Format data as clean markdown for LLM context
+
+### Framework Adapters
+
+- `createLangChainTools(schema, executor, options?)` -- Create LangChain-compatible tools (JSON string input)
+- `createStructuredTools(schema, executor, options?)` -- Create LangChain StructuredTool-compatible tools (Zod schemas)
+- `createCrewAITools(schema, executor, options?)` -- Create CrewAI-compatible tools (dict input, `args_schema`)
+- `createVercelAITools(schema, executor, options?)` -- Create Vercel AI SDK-compatible tools (Zod parameters, Record)
+
+### Mock Data
+
+- `generateMockData(schema, typeName, config?)` -- Generate mock data for a given type
+- `createMockExecutor(schema, config?)` -- Create a mock executor as drop-in replacement for GraphQLExecutor
+
 ### Types
 
 - `AgentToolkitConfig` -- Configuration object
@@ -198,6 +337,12 @@ The `AgentToolkitConfig` object accepts:
 - `SchemaField` -- Field definition with args
 - `GeneratedOperation` -- Generated operation with variables
 - `SearchResult` -- Semantic search result
+- `SummaryConfig` -- Configuration for response summarization
+- `PaginationConfig` -- Configuration for paginated queries
+- `MockConfig` -- Configuration for mock data generation
+- `LangChainToolConfig` -- LangChain tool definition shape
+- `CrewAIToolConfig` -- CrewAI tool definition shape
+- `VercelAIToolConfig` -- Vercel AI SDK tool definition shape
 
 ## Contributing
 
