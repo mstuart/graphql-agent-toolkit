@@ -1,5 +1,9 @@
 # graphql-agent-toolkit
 
+[![CI](https://github.com/mstuart/graphql-agent-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/mstuart/graphql-agent-toolkit/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/graphql-agent-toolkit.svg)](https://www.npmjs.com/package/graphql-agent-toolkit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Turn any GraphQL API into AI-agent-ready tools -- MCP servers, LangChain tools, and standalone SDKs.
 
 **graphql-agent-toolkit** introspects a GraphQL endpoint, generates typed operations, and exposes them as tools that AI agents can discover and call. It supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) out of the box, so you can connect any MCP-compatible AI client to any GraphQL API in seconds.
