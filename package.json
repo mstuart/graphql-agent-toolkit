@@ -41,7 +41,12 @@
     "agent",
     "toolkit",
     "langchain",
-    "model-context-protocol"
+    "model-context-protocol",
+    "crewai",
+    "vercel-ai",
+    "introspection",
+    "typescript",
+    "sdk"
   ],
   "author": "Mark Stuart",
   "license": "MIT",
@@ -53,17 +58,21 @@
   "bugs": {
     "url": "https://github.com/mstuart/graphql-agent-toolkit/issues"
   },
+  "sideEffects": false,
   "engines": {
     "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "graphql": "^16.12.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "commander": "^14.0.3",
-    "graphql": "^16.12.0",
     "graphql-request": "^7.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "graphql": "^16.12.0",
     "@types/node": "^25.2.3",
     "@typescript-eslint/eslint-plugin": "^8.55.0",
     "@typescript-eslint/parser": "^8.55.0",
