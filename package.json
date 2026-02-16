@@ -1,6 +1,6 @@
 {
   "name": "graphql-agent-toolkit",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Turn any GraphQL API into AI-agent-ready tools — MCP servers, LangChain tools, and standalone SDKs",
   "type": "module",
   "main": "./dist/index.cjs",
