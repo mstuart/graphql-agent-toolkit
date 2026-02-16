@@ -4,7 +4,7 @@
 [![npm version](https://img.shields.io/npm/v/graphql-agent-toolkit.svg)](https://www.npmjs.com/package/graphql-agent-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Turn any GraphQL API into AI-agent-ready tools -- MCP servers, LangChain tools, and standalone SDKs.
+Turn any GraphQL API into AI-agent-ready tools -- MCP servers, LangChain tools, and framework adapters.
 
 **graphql-agent-toolkit** introspects a GraphQL endpoint, generates typed operations, and exposes them as tools that AI agents can discover and call. It supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) out of the box, so you can connect any MCP-compatible AI client to any GraphQL API in seconds.
 
@@ -23,8 +23,16 @@ npx graphql-agent-toolkit serve --endpoint https://your-api.com/graphql
 ## Installation
 
 ```bash
-npm install graphql-agent-toolkit
+npm install graphql-agent-toolkit graphql
 ```
+
+## Requirements
+
+- Node.js >= 18.0.0
+- `graphql` >= 16.0.0 (peer dependency)
+- TypeScript >= 5.0 (optional, for type definitions)
+
+Fully written in TypeScript with complete type exports for all public APIs.
 
 ## Features
 
