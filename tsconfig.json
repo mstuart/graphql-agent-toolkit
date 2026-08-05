@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
+    "types": ["node"],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -14,7 +15,11 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    // tsup's dts bundler sets `baseUrl` internally for its own resolution;
+    // TS 6 deprecated it (removed in 7.0) but this is TS's own sanctioned
+    // transitional flag, not a suppressed real error.
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist", "tests"]
