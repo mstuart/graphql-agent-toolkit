@@ -60,7 +60,7 @@
   },
   "sideEffects": false,
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22"
   },
   "peerDependencies": {
     "graphql": "^16.12.0"
