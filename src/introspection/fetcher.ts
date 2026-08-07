@@ -18,8 +18,12 @@ export async function fetchSchema(options: FetchSchemaOptions): Promise<Introspe
     return result;
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`Failed to fetch schema from ${options.endpoint}: ${error.message}`);
+      throw new Error(`Failed to fetch schema from ${options.endpoint}: ${error.message}`, {
+        cause: error,
+      });
     }
-    throw new Error(`Failed to fetch schema from ${options.endpoint}: Unknown error`);
+    throw new Error(`Failed to fetch schema from ${options.endpoint}: Unknown error`, {
+      cause: error,
+    });
   }
 }

@@ -29,7 +29,6 @@ export function summarizeResponse(
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const originalSize = JSON.stringify(data).length;
   let truncated = false;
-  let totalItems = 0;
 
   function countItems(value: unknown): number {
     if (Array.isArray(value)) return value.length;
@@ -44,7 +43,7 @@ export function summarizeResponse(
     return 0;
   }
 
-  totalItems = countItems(data);
+  const totalItems = countItems(data);
 
   function summarize(value: unknown, depth: number): unknown {
     if (value === null || value === undefined) return value;
