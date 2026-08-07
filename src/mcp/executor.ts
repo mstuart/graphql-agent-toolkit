@@ -17,9 +17,9 @@ export class GraphQLExecutor {
       return JSON.stringify(result, null, 2);
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(`GraphQL execution failed: ${error.message}`);
+        throw new Error(`GraphQL execution failed: ${error.message}`, { cause: error });
       }
-      throw new Error('GraphQL execution failed: Unknown error');
+      throw new Error('GraphQL execution failed: Unknown error', { cause: error });
     }
   }
 }
