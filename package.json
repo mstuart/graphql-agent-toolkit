@@ -1,7 +1,7 @@
 {
   "name": "graphql-agent-toolkit",
   "version": "1.0.0",
-  "description": "Turn any GraphQL API into AI-agent-ready tools — MCP servers, LangChain tools, and standalone SDKs",
+  "description": "Turn any GraphQL API into AI-agent-ready tools \u2014 MCP servers, LangChain tools, and standalone SDKs",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -82,5 +82,8 @@
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   }
 }
