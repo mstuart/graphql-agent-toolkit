@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { Command } from 'commander';
 import { runInit } from './cli/init.js';
 import { runServe } from './cli/serve.js';

@@ -1,112 +1,119 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createVercelAITools } from '../../src/adapters/vercel-ai.js';
 import type { ParsedSchema, SchemaType, SchemaField } from '../../src/types/schema.js';
-import type { GraphQLExecutor } from '../../src/mcp/executor.js';
 
-function makeField(name: string, typeName: string, kind: string = 'OBJECT', args: SchemaField['args'] = []): SchemaField {
-  return {
-    name,
-    description: null,
-    type: { kind: kind as any, name: typeName, ofType: null },
-    args,
-    isDeprecated: false,
-  };
-}
+const defineType = (types: Map<string, SchemaType>, name: string, type: SchemaType): void => {
+  types.set(name, type);
+};
 
-function makeArg(name: string, typeName: string = 'String'): SchemaField['args'][number] {
-  return {
-    name,
-    description: null,
-    type: { kind: 'SCALAR', name: typeName, ofType: null },
-    defaultValue: null,
-  };
-}
+const makeField = (
+  name: string,
+  typeName: string,
+  kind: SchemaField['type']['kind'] = 'OBJECT',
+): SchemaField => ({
+  args: [],
+  description: null,
+  isDeprecated: false,
+  name,
+  type: { kind, name: typeName, ofType: null },
+});
 
-function makeRequiredArg(name: string, typeName: string = 'String'): SchemaField['args'][number] {
-  return {
-    name,
-    description: null,
-    type: { kind: 'NON_NULL', name: null, ofType: { kind: 'SCALAR', name: typeName, ofType: null } },
-    defaultValue: null,
-  };
-}
+const makeArgument = (name: string, typeName = 'String'): SchemaField['args'][number] => ({
+  defaultValue: null,
+  description: null,
+  name,
+  type: { kind: 'SCALAR', name: typeName, ofType: null },
+});
 
-function buildTestSchema(): ParsedSchema {
+const makeRequiredArgument = (name: string, typeName = 'String'): SchemaField['args'][number] => ({
+  defaultValue: null,
+  description: null,
+  name,
+  type: {
+    kind: 'NON_NULL',
+    name: null,
+    ofType: { kind: 'SCALAR', name: typeName, ofType: null },
+  },
+});
+
+const buildTestSchema = (): ParsedSchema => {
   const types = new Map<string, SchemaType>();
 
-  types.set('Query', {
-    name: 'Query',
-    kind: 'OBJECT',
+  defineType(types, 'Query', {
     description: null,
+    enumValues: [],
     fields: [
       {
-        name: 'user',
+        args: [makeRequiredArgument('id', 'ID')],
         description: 'Fetch a user by ID',
-        type: { kind: 'OBJECT', name: 'User', ofType: null },
-        args: [makeRequiredArg('id', 'ID')],
         isDeprecated: false,
+        name: 'user',
+        type: { kind: 'OBJECT', name: 'User', ofType: null },
       },
       {
-        name: 'search',
+        args: [makeRequiredArgument('query', 'String'), makeArgument('limit', 'Int')],
         description: 'Search items',
-        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'User', ofType: null } },
-        args: [makeRequiredArg('query', 'String'), makeArg('limit', 'Int')],
         isDeprecated: false,
+        name: 'search',
+        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'User', ofType: null } },
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Query',
     possibleTypes: [],
   });
 
-  types.set('Mutation', {
-    name: 'Mutation',
-    kind: 'OBJECT',
+  defineType(types, 'Mutation', {
     description: null,
+    enumValues: [],
     fields: [
       {
-        name: 'updateUser',
+        args: [makeRequiredArgument('id', 'ID'), makeArgument('name', 'String')],
         description: 'Update a user',
-        type: { kind: 'OBJECT', name: 'User', ofType: null },
-        args: [makeRequiredArg('id', 'ID'), makeArg('name', 'String')],
         isDeprecated: false,
+        name: 'updateUser',
+        type: { kind: 'OBJECT', name: 'User', ofType: null },
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Mutation',
     possibleTypes: [],
   });
 
-  types.set('User', {
-    name: 'User',
-    kind: 'OBJECT',
+  defineType(types, 'User', {
     description: null,
+    enumValues: [],
     fields: [
       makeField('id', 'ID', 'SCALAR'),
       makeField('name', 'String', 'SCALAR'),
       makeField('email', 'String', 'SCALAR'),
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'User',
     possibleTypes: [],
   });
 
   return {
-    queryType: 'Query',
     mutationType: 'Mutation',
+    queryType: 'Query',
     subscriptionType: null,
     types,
   };
-}
+};
 
-function createMockExecutor(): GraphQLExecutor {
-  return {
-    execute: vi.fn().mockResolvedValue(JSON.stringify({ data: { user: { id: '1', name: 'Alice', email: 'a@b.com' } } })),
-  } as unknown as GraphQLExecutor;
-}
+const createMockExecutor = () => ({
+  execute: vi
+    .fn()
+    .mockResolvedValue(
+      JSON.stringify({ data: { user: { email: 'a@b.com', id: '1', name: 'Alice' } } }),
+    ),
+});
 
 describe('createVercelAITools', () => {
   it('should return a Record (not array) keyed by tool name', () => {
@@ -157,7 +164,7 @@ describe('createVercelAITools', () => {
     expect(parsed.query).toBe('test');
 
     // With optional param
-    const parsedWithLimit = searchTool.parameters.parse({ query: 'test', limit: 10 });
+    const parsedWithLimit = searchTool.parameters.parse({ limit: 10, query: 'test' });
     expect(parsedWithLimit.limit).toBe(10);
   });
 
@@ -176,7 +183,9 @@ describe('createVercelAITools', () => {
   it('should execute mutations correctly', async () => {
     const schema = buildTestSchema();
     const executor = createMockExecutor();
-    (executor.execute as any).mockResolvedValue(JSON.stringify({ data: { updateUser: { id: '1', name: 'Updated' } } }));
+    executor.execute.mockResolvedValue(
+      JSON.stringify({ data: { updateUser: { id: '1', name: 'Updated' } } }),
+    );
 
     const tools = createVercelAITools(schema, executor);
     const updateTool = tools['mutate_updateUser'];
@@ -194,29 +203,33 @@ describe('createVercelAITools', () => {
   });
 
   it('should handle schema with no mutations', () => {
-    const types = new Map<string, SchemaType>();
-    types.set('Query', {
-      name: 'Query',
-      kind: 'OBJECT',
-      description: null,
-      fields: [
+    const types = new Map<string, SchemaType>([
+      [
+        'Query',
         {
-          name: 'hello',
-          description: 'Say hello',
-          type: { kind: 'SCALAR', name: 'String', ofType: null },
-          args: [],
-          isDeprecated: false,
+          description: null,
+          enumValues: [],
+          fields: [
+            {
+              args: [],
+              description: 'Say hello',
+              isDeprecated: false,
+              name: 'hello',
+              type: { kind: 'SCALAR', name: 'String', ofType: null },
+            },
+          ],
+          inputFields: [],
+          interfaces: [],
+          kind: 'OBJECT',
+          name: 'Query',
+          possibleTypes: [],
         },
       ],
-      inputFields: [],
-      enumValues: [],
-      interfaces: [],
-      possibleTypes: [],
-    });
+    ]);
 
     const schema: ParsedSchema = {
-      queryType: 'Query',
       mutationType: null,
+      queryType: 'Query',
       subscriptionType: null,
       types,
     };

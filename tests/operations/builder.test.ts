@@ -1,38 +1,42 @@
+import assert from 'node:assert/strict';
 import { describe, it, expect } from 'vitest';
 import { buildOperation } from '../../src/operations/builder.js';
-import { typeRefToString, isRequired } from '../../src/operations/variables.js';
+import {
+  typeRefToString as typeReferenceToString,
+  isRequired,
+} from '../../src/operations/variables.js';
 import { parseSchema } from '../../src/introspection/parser.js';
 import { mockIntrospectionResult } from '../introspection/fixtures.js';
-import type { TypeRef } from '../../src/types/index.js';
+import type { TypeRef as TypeReference } from '../../src/types/index.js';
 
 const schema = parseSchema(mockIntrospectionResult);
 
 describe('typeRefToString', () => {
   it('should convert a simple scalar type', () => {
-    const ref: TypeRef = { kind: 'SCALAR', name: 'String', ofType: null };
-    expect(typeRefToString(ref)).toBe('String');
+    const reference: TypeReference = { kind: 'SCALAR', name: 'String', ofType: null };
+    expect(typeReferenceToString(reference)).toBe('String');
   });
 
   it('should convert a non-null scalar type', () => {
-    const ref: TypeRef = {
+    const reference: TypeReference = {
       kind: 'NON_NULL',
       name: null,
       ofType: { kind: 'SCALAR', name: 'ID', ofType: null },
     };
-    expect(typeRefToString(ref)).toBe('ID!');
+    expect(typeReferenceToString(reference)).toBe('ID!');
   });
 
   it('should convert a list type', () => {
-    const ref: TypeRef = {
+    const reference: TypeReference = {
       kind: 'LIST',
       name: null,
       ofType: { kind: 'OBJECT', name: 'User', ofType: null },
     };
-    expect(typeRefToString(ref)).toBe('[User]');
+    expect(typeReferenceToString(reference)).toBe('[User]');
   });
 
   it('should convert a non-null list of non-null items', () => {
-    const ref: TypeRef = {
+    const reference: TypeReference = {
       kind: 'NON_NULL',
       name: null,
       ofType: {
@@ -45,23 +49,23 @@ describe('typeRefToString', () => {
         },
       },
     };
-    expect(typeRefToString(ref)).toBe('[User!]!');
+    expect(typeReferenceToString(reference)).toBe('[User!]!');
   });
 });
 
 describe('isRequired', () => {
   it('should return true for NON_NULL types', () => {
-    const ref: TypeRef = {
+    const reference: TypeReference = {
       kind: 'NON_NULL',
       name: null,
       ofType: { kind: 'SCALAR', name: 'ID', ofType: null },
     };
-    expect(isRequired(ref)).toBe(true);
+    expect(isRequired(reference)).toBe(true);
   });
 
   it('should return false for nullable types', () => {
-    const ref: TypeRef = { kind: 'SCALAR', name: 'String', ofType: null };
-    expect(isRequired(ref)).toBe(false);
+    const reference: TypeReference = { kind: 'SCALAR', name: 'String', ofType: null };
+    expect(isRequired(reference)).toBe(false);
   });
 });
 
@@ -74,10 +78,10 @@ describe('buildOperation', () => {
     expect(result.operation).toContain('user(id: $id)');
     expect(result.variables).toHaveLength(1);
     expect(result.variables[0]).toEqual({
-      name: 'id',
-      type: 'ID!',
-      required: true,
       description: 'User ID',
+      name: 'id',
+      required: true,
+      type: 'ID!',
     });
   });
 
@@ -129,10 +133,10 @@ describe('buildOperation', () => {
 
   it('should generate variables with default argument info', () => {
     const result = buildOperation(schema, 'users');
-    const limitVar = result.variables.find((v) => v.name === 'limit');
-    expect(limitVar).toBeDefined();
-    expect(limitVar!.required).toBe(false);
-    expect(limitVar!.type).toBe('Int');
+    const limitVariable = result.variables.find((v) => v.name === 'limit');
+    assert.ok(limitVariable);
+    expect(limitVariable.required).toBe(false);
+    expect(limitVariable.type).toBe('Int');
   });
 
   it('should handle list return types', () => {

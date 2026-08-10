@@ -1,37 +1,39 @@
 import type { IntrospectionQuery } from 'graphql';
-import type { ParsedSchema, SchemaType, SchemaField, SchemaArgument, TypeRef } from '../types/index.js';
+import type {
+  ParsedSchema,
+  SchemaType,
+  SchemaField,
+  SchemaArgument,
+  TypeReference,
+} from '../types/index.js';
 
-function convertTypeRef(introspectionType: {
+const convertTypeReference = (introspectionType: {
   kind: string;
   name?: string | null;
   ofType?: unknown;
-}): TypeRef {
-  return {
-    kind: introspectionType.kind as TypeRef['kind'],
-    name: introspectionType.name ?? null,
-    ofType: introspectionType.ofType
-      ? convertTypeRef(
-          introspectionType.ofType as { kind: string; name?: string | null; ofType?: unknown },
-        )
-      : null,
-  };
-}
+}): TypeReference => ({
+  kind: introspectionType.kind as TypeReference['kind'],
+  name: introspectionType.name ?? null,
+  ofType: introspectionType.ofType
+    ? convertTypeReference(
+        introspectionType.ofType as { kind: string; name?: string | null; ofType?: unknown },
+      )
+    : null,
+});
 
-function convertArgument(arg: {
+const convertArgument = (argument: {
   name: string;
   description?: string | null;
   type: { kind: string; name?: string | null; ofType?: unknown };
   defaultValue?: string | null;
-}): SchemaArgument {
-  return {
-    name: arg.name,
-    description: arg.description ?? null,
-    type: convertTypeRef(arg.type),
-    defaultValue: arg.defaultValue ?? null,
-  };
-}
+}): SchemaArgument => ({
+  defaultValue: argument.defaultValue ?? null,
+  description: argument.description ?? null,
+  name: argument.name,
+  type: convertTypeReference(argument.type),
+});
 
-function convertField(field: {
+const convertField = (field: {
   name: string;
   description?: string | null;
   type: { kind: string; name?: string | null; ofType?: unknown };
@@ -42,17 +44,15 @@ function convertField(field: {
     defaultValue?: string | null;
   }[];
   isDeprecated?: boolean;
-}): SchemaField {
-  return {
-    name: field.name,
-    description: field.description ?? null,
-    type: convertTypeRef(field.type),
-    args: (field.args ?? []).map(convertArgument),
-    isDeprecated: field.isDeprecated ?? false,
-  };
-}
+}): SchemaField => ({
+  args: (field.args ?? []).map(convertArgument),
+  description: field.description ?? null,
+  isDeprecated: field.isDeprecated ?? false,
+  name: field.name,
+  type: convertTypeReference(field.type),
+});
 
-export function parseSchema(introspectionResult: IntrospectionQuery): ParsedSchema {
+export const parseSchema = (introspectionResult: IntrospectionQuery): ParsedSchema => {
   const schema = introspectionResult.__schema;
 
   const types = new Map<string, SchemaType>();
@@ -64,47 +64,45 @@ export function parseSchema(introspectionResult: IntrospectionQuery): ParsedSche
     }
 
     const schemaType: SchemaType = {
-      name: type.name,
-      kind: type.kind as TypeRef['kind'],
       description: type.description ?? null,
-      fields: ('fields' in type && type.fields ? type.fields.map(convertField) : []),
-      inputFields: (
-        'inputFields' in type && type.inputFields
-          ? (type.inputFields as Array<{
-              name: string;
-              description?: string | null;
-              type: { kind: string; name?: string | null; ofType?: unknown };
-              defaultValue?: string | null;
-            }>).map(convertArgument)
-          : []
-      ),
-      enumValues: (
+      enumValues:
         'enumValues' in type && type.enumValues
           ? type.enumValues.map((v: { name: string; description?: string | null }) => ({
-              name: v.name,
               description: v.description ?? null,
+              name: v.name,
             }))
-          : []
-      ),
-      interfaces: (
+          : [],
+      fields: 'fields' in type && type.fields ? type.fields.map(convertField) : [],
+      inputFields:
+        'inputFields' in type && type.inputFields
+          ? (
+              type.inputFields as {
+                name: string;
+                description?: string | null;
+                type: { kind: string; name?: string | null; ofType?: unknown };
+                defaultValue?: string | null;
+              }[]
+            ).map(convertArgument)
+          : [],
+      interfaces:
         'interfaces' in type && type.interfaces
-          ? type.interfaces.map((i: { name: string }) => i.name)
-          : []
-      ),
-      possibleTypes: (
+          ? type.interfaces.map((index: { name: string }) => index.name)
+          : [],
+      kind: type.kind as TypeReference['kind'],
+      name: type.name,
+      possibleTypes:
         'possibleTypes' in type && type.possibleTypes
           ? type.possibleTypes.map((t: { name: string }) => t.name)
-          : []
-      ),
+          : [],
     };
 
     types.set(type.name, schemaType);
   }
 
   return {
-    queryType: schema.queryType.name,
     mutationType: schema.mutationType?.name ?? null,
+    queryType: schema.queryType.name,
     subscriptionType: schema.subscriptionType?.name ?? null,
     types,
   };
-}
+};

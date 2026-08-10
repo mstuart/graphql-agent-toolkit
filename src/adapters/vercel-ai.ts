@@ -1,102 +1,125 @@
 import { z } from 'zod';
-import type { ParsedSchema, SchemaField, TypeRef } from '../types/index.js';
 import { buildOperation } from '../operations/index.js';
 import { unwrapType } from '../operations/variables.js';
+import type {
+  ParsedSchema,
+  SchemaField,
+  SchemaType,
+  TypeRef as TypeReference,
+} from '../types/index.js';
 import type { GraphQLExecutor } from '../mcp/executor.js';
 
 export interface VercelAIToolConfig {
   description: string;
   parameters: z.ZodObject<Record<string, z.ZodType>>;
-  execute: (args: Record<string, unknown>) => Promise<string>;
+  execute: (parameters: Record<string, unknown>) => Promise<string>;
 }
 
 interface AdapterOptions {
   maxDepth?: number;
 }
 
+type ZodSchemaConverter = (typeReference: TypeReference, schema: ParsedSchema) => z.ZodType;
+
+const namedTypeToZod = (
+  namedType: SchemaType,
+  schema: ParsedSchema,
+  convertType: ZodSchemaConverter,
+): z.ZodType | undefined => {
+  if (namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
+    const values = namedType.enumValues.map((value) => value.name) as [string, ...string[]];
+    return z.enum(values).optional();
+  }
+
+  if (namedType.kind !== 'INPUT_OBJECT') {
+    return undefined;
+  }
+
+  const shape: Record<string, z.ZodType> = {};
+  for (const field of namedType.inputFields) {
+    const fieldSchema = convertType(field.type, schema);
+    shape[field.name] = field.type.kind === 'NON_NULL' ? fieldSchema : fieldSchema.optional();
+  }
+  return z.object(shape);
+};
+
 /**
  * Convert a GraphQL TypeRef to a Zod schema.
  */
-function typeRefToZod(typeRef: TypeRef, schema: ParsedSchema): z.ZodType {
-  if (typeRef.kind === 'NON_NULL') {
-    if (!typeRef.ofType) return z.unknown();
-    return typeRefToZod(typeRef.ofType, schema);
+const typeReferenceToZod = (typeReference: TypeReference, schema: ParsedSchema): z.ZodType => {
+  if (typeReference.kind === 'NON_NULL') {
+    if (!typeReference.ofType) {
+      return z.unknown();
+    }
+    return typeReferenceToZod(typeReference.ofType, schema);
   }
 
-  if (typeRef.kind === 'LIST') {
-    if (!typeRef.ofType) return z.array(z.unknown()).optional();
-    return z.array(typeRefToZod(typeRef.ofType, schema)).optional();
+  if (typeReference.kind === 'LIST') {
+    if (!typeReference.ofType) {
+      return z.array(z.unknown()).optional();
+    }
+    return z.array(typeReferenceToZod(typeReference.ofType, schema)).optional();
   }
 
-  const unwrapped = unwrapType(typeRef);
+  const unwrapped = unwrapType(typeReference);
   const typeName = unwrapped.name;
 
   if (typeName) {
     const namedType = schema.types.get(typeName);
-    if (namedType && namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
-      const values = namedType.enumValues.map((v) => v.name) as [string, ...string[]];
-      return z.enum(values).optional();
-    }
-
-    if (namedType && namedType.kind === 'INPUT_OBJECT') {
-      const shape: Record<string, z.ZodType> = {};
-      for (const field of namedType.inputFields) {
-        const fieldSchema = typeRefToZod(field.type, schema);
-        if (field.type.kind === 'NON_NULL') {
-          shape[field.name] = fieldSchema;
-        } else {
-          shape[field.name] = fieldSchema.optional();
-        }
+    if (namedType) {
+      const namedSchema = namedTypeToZod(namedType, schema, typeReferenceToZod);
+      if (namedSchema) {
+        return namedSchema;
       }
-      return z.object(shape);
     }
   }
 
   switch (typeName) {
     case 'String':
-    case 'ID':
+    case 'ID': {
       return z.string().optional();
-    case 'Int':
+    }
+    case 'Int': {
       return z.number().int().optional();
-    case 'Float':
+    }
+    case 'Float': {
       return z.number().optional();
-    case 'Boolean':
+    }
+    case 'Boolean': {
       return z.boolean().optional();
-    default:
+    }
+    default: {
       return z.unknown().optional();
+    }
   }
-}
+};
 
 /**
  * Build a Zod object schema for a field's arguments.
  */
-function buildParametersSchema(
+const buildParametersSchema = (
   field: SchemaField,
   schema: ParsedSchema,
-): z.ZodObject<Record<string, z.ZodType>> {
+): z.ZodObject<Record<string, z.ZodType>> => {
   const shape: Record<string, z.ZodType> = {};
 
-  for (const arg of field.args) {
-    const zodType = typeRefToZod(arg.type, schema);
-    if (arg.type.kind === 'NON_NULL') {
-      shape[arg.name] = zodType;
-    } else {
-      shape[arg.name] = zodType.optional();
-    }
+  for (const argument of field.args) {
+    const zodType = typeReferenceToZod(argument.type, schema);
+    shape[argument.name] = argument.type.kind === 'NON_NULL' ? zodType : zodType.optional();
   }
 
   return z.object(shape);
-}
+};
 
 /**
  * Create tools compatible with Vercel AI SDK's tool() shape.
  * Returns Record<toolName, { description, parameters: ZodSchema, execute }>.
  */
-export function createVercelAITools(
+export const createVercelAITools = (
   schema: ParsedSchema,
   executor: GraphQLExecutor,
   options?: AdapterOptions,
-): Record<string, VercelAIToolConfig> {
+): Record<string, VercelAIToolConfig> => {
   const maxDepth = options?.maxDepth ?? 2;
   const tools: Record<string, VercelAIToolConfig> = {};
 
@@ -109,11 +132,11 @@ export function createVercelAITools(
 
       tools[toolName] = {
         description,
-        parameters,
-        execute: async (args: Record<string, unknown>): Promise<string> => {
+        execute: async (input: Record<string, unknown>): Promise<string> => {
           const op = buildOperation(schema, field.name, { maxDepth });
-          return executor.execute(op.operation, args);
+          return executor.execute(op.operation, input);
         },
+        parameters,
       };
     }
   }
@@ -128,15 +151,15 @@ export function createVercelAITools(
 
         tools[toolName] = {
           description,
-          parameters,
-          execute: async (args: Record<string, unknown>): Promise<string> => {
+          execute: async (input: Record<string, unknown>): Promise<string> => {
             const op = buildOperation(schema, field.name, { maxDepth });
-            return executor.execute(op.operation, args);
+            return executor.execute(op.operation, input);
           },
+          parameters,
         };
       }
     }
   }
 
   return tools;
-}
+};

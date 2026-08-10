@@ -1,3 +1,4 @@
+import { isNativeError } from 'node:util/types';
 import { GraphQLClient } from 'graphql-request';
 
 export class GraphQLExecutor {
@@ -16,8 +17,8 @@ export class GraphQLExecutor {
       const result = await this.client.request(operation, variables, additionalHeaders);
       return JSON.stringify(result, null, 2);
     } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`GraphQL execution failed: ${error.message}`, { cause: error });
+      if (isNativeError(error)) {
+        throw new TypeError(`GraphQL execution failed: ${error.message}`, { cause: error });
       }
       throw new Error('GraphQL execution failed: Unknown error', { cause: error });
     }

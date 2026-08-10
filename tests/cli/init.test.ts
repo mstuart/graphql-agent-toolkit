@@ -4,14 +4,13 @@ import { mockIntrospectionResult } from '../introspection/fixtures.js';
 const mockRequest = vi.fn();
 vi.mock('graphql-request', () => ({
   GraphQLClient: class MockGraphQLClient {
-    constructor() {}
     request = mockRequest;
   },
 }));
 
 const mockWriteFileSync = vi.fn();
 vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
+  const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     writeFileSync: mockWriteFileSync,
@@ -25,7 +24,7 @@ describe('runInit', () => {
   });
 
   it('should generate a config object from endpoint', async () => {
-    const { runInit } = await import('../../src/cli/init.js');
+    const { runInit } = await import(/* webpackChunkName: "cli-init" */ '../../src/cli/init.js');
 
     const config = await runInit({
       endpoint: 'https://example.com/graphql',
@@ -38,7 +37,7 @@ describe('runInit', () => {
   });
 
   it('should include headers in config when provided', async () => {
-    const { runInit } = await import('../../src/cli/init.js');
+    const { runInit } = await import(/* webpackChunkName: "cli-init" */ '../../src/cli/init.js');
 
     const config = await runInit({
       endpoint: 'https://example.com/graphql',
@@ -49,15 +48,15 @@ describe('runInit', () => {
   });
 
   it('should write config to file when output is specified', async () => {
-    const { runInit } = await import('../../src/cli/init.js');
+    const { runInit } = await import(/* webpackChunkName: "cli-init" */ '../../src/cli/init.js');
 
     await runInit({
       endpoint: 'https://example.com/graphql',
-      output: '/tmp/test-config.json',
+      output: 'test-config.json',
     });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      '/tmp/test-config.json',
+      'test-config.json',
       expect.stringContaining('"endpoint"'),
     );
   });
@@ -65,10 +64,8 @@ describe('runInit', () => {
   it('should throw on introspection failure', async () => {
     mockRequest.mockRejectedValueOnce(new Error('Connection refused'));
 
-    const { runInit } = await import('../../src/cli/init.js');
+    const { runInit } = await import(/* webpackChunkName: "cli-init" */ '../../src/cli/init.js');
 
-    await expect(
-      runInit({ endpoint: 'https://bad-endpoint.com/graphql' }),
-    ).rejects.toThrow();
+    await expect(runInit({ endpoint: 'https://bad-endpoint.com/graphql' })).rejects.toThrow();
   });
 });

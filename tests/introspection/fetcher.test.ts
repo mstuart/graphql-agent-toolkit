@@ -3,21 +3,21 @@ import { fetchSchema } from '../../src/introspection/fetcher.js';
 import { mockIntrospectionResult } from './fixtures.js';
 
 const mockRequest = vi.fn();
+const clientState: {
+  last: { endpoint: string; options?: Record<string, unknown> } | null;
+} = { last: null };
 
-vi.mock('graphql-request', () => {
-  return {
-    GraphQLClient: class MockGraphQLClient {
-      options: Record<string, unknown>;
-      constructor(_endpoint: string, options?: Record<string, unknown>) {
-        // Store for inspection
-        MockGraphQLClient.lastInstance = { endpoint: _endpoint, options };
-        this.options = options ?? {};
-      }
-      request = mockRequest;
-      static lastInstance: { endpoint: string; options?: Record<string, unknown> } | null = null;
-    },
-  };
-});
+vi.mock('graphql-request', () => ({
+  GraphQLClient: class MockGraphQLClient {
+    request = mockRequest;
+    options: Record<string, unknown>;
+    constructor(_endpoint: string, options?: Record<string, unknown>) {
+      // Store for inspection
+      clientState.last = { endpoint: _endpoint, options };
+      this.options = options ?? {};
+    }
+  },
+}));
 
 describe('fetchSchema', () => {
   beforeEach(() => {
@@ -41,11 +41,8 @@ describe('fetchSchema', () => {
       headers: { Authorization: 'Bearer token123' },
     });
 
-    const { GraphQLClient } = await import('graphql-request');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lastInstance = (GraphQLClient as any).lastInstance;
-    expect(lastInstance.endpoint).toBe('https://example.com/graphql');
-    expect(lastInstance.options).toEqual({
+    expect(clientState.last?.endpoint).toBe('https://example.com/graphql');
+    expect(clientState.last?.options).toEqual({
       headers: { Authorization: 'Bearer token123' },
     });
   });
@@ -53,16 +50,16 @@ describe('fetchSchema', () => {
   it('should throw a descriptive error on network failure', async () => {
     mockRequest.mockRejectedValueOnce(new Error('Network error'));
 
-    await expect(
-      fetchSchema({ endpoint: 'https://example.com/graphql' }),
-    ).rejects.toThrow('Failed to fetch schema from https://example.com/graphql: Network error');
+    await expect(fetchSchema({ endpoint: 'https://example.com/graphql' })).rejects.toThrow(
+      'Failed to fetch schema from https://example.com/graphql: Network error',
+    );
   });
 
   it('should handle non-Error thrown values', async () => {
     mockRequest.mockRejectedValueOnce('some string error');
 
-    await expect(
-      fetchSchema({ endpoint: 'https://example.com/graphql' }),
-    ).rejects.toThrow('Failed to fetch schema from https://example.com/graphql: Unknown error');
+    await expect(fetchSchema({ endpoint: 'https://example.com/graphql' })).rejects.toThrow(
+      'Failed to fetch schema from https://example.com/graphql: Unknown error',
+    );
   });
 });

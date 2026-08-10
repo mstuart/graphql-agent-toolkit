@@ -14,6 +14,7 @@
 </p>
 
 ---
+
 Turn any GraphQL API into AI-agent-ready tools -- MCP servers, LangChain tools, and framework adapters.
 
 **graphql-agent-toolkit** introspects a GraphQL endpoint, generates typed operations, and exposes them as tools that AI agents can discover and call. It supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) out of the box, so you can connect any MCP-compatible AI client to any GraphQL API in seconds.
@@ -149,8 +150,8 @@ import { summarizeResponse, formatForLLM } from 'graphql-agent-toolkit';
 
 // Summarize a large response
 const { summary, metadata } = summarizeResponse(largeResponse, {
-  maxItems: 5,        // max array items to include
-  maxDepth: 3,        // max nesting depth
+  maxItems: 5, // max array items to include
+  maxDepth: 3, // max nesting depth
   maxStringLength: 200, // truncate long strings
   includeMetadata: true, // add _meta with counts
 });
@@ -223,9 +224,9 @@ import { generateMockData, createMockExecutor } from 'graphql-agent-toolkit';
 
 // Generate mock data for a specific type
 const mockUser = generateMockData(schema, 'User', {
-  seed: 42,         // deterministic output
-  arrayLength: 3,   // items per list field
-  maxDepth: 3,      // max recursion depth
+  seed: 42, // deterministic output
+  arrayLength: 3, // items per list field
+  maxDepth: 3, // max recursion depth
 });
 console.log(mockUser);
 // { id: 'id_id_0', name: 'mock_name', posts: [...] }
@@ -234,10 +235,7 @@ console.log(mockUser);
 const mockExecutor = createMockExecutor(schema, { seed: 42 });
 
 // Use it anywhere a GraphQLExecutor is expected
-const result = await mockExecutor.execute(
-  'query { user(id: "1") { id name } }',
-  { id: '1' }
-);
+const result = await mockExecutor.execute('query { user(id: "1") { id name } }', { id: '1' });
 ```
 
 Use the `@mock()` directive in field descriptions for custom values:
@@ -283,12 +281,7 @@ Add to your MCP client configuration (e.g., Claude Desktop):
   "mcpServers": {
     "my-graphql-api": {
       "command": "npx",
-      "args": [
-        "graphql-agent-toolkit",
-        "serve",
-        "--endpoint",
-        "https://your-api.com/graphql"
-      ]
+      "args": ["graphql-agent-toolkit", "serve", "--endpoint", "https://your-api.com/graphql"]
     }
   }
 }
@@ -299,7 +292,7 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 The `AgentToolkitConfig` object accepts:
 
 | Property | Type | Default | Description |
-|----------|------|---------|-------------|
+| --- | --- | --- | --- |
 | `endpoint` | `string` | (required) | GraphQL endpoint URL |
 | `headers` | `Record<string, string>` | `{}` | HTTP headers for requests |
 | `operationDepth` | `number` | `2` | Max depth for generated selection sets |

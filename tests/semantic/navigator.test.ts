@@ -54,8 +54,8 @@ describe('SchemaNavigator', () => {
     const results = navigator.search('create user');
     expect(results.length).toBeGreaterThan(0);
     // Should find CreateUserInput or Mutation
-    const typeNames = results.map((r) => r.typeName);
-    const hasRelevant = typeNames.includes('CreateUserInput') || typeNames.includes('Mutation');
+    const typeNames = new Set(results.map((r) => r.typeName));
+    const hasRelevant = typeNames.has('CreateUserInput') || typeNames.has('Mutation');
     expect(hasRelevant).toBe(true);
   });
 
