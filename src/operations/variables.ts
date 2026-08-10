@@ -1,42 +1,44 @@
-import type { TypeRef } from '../types/index.js';
+import type { TypeReference } from '../types/index.js';
 
 /**
  * Converts a TypeRef to a GraphQL type string.
  * e.g. NON_NULL(LIST(NON_NULL(OBJECT("User")))) → "[User!]!"
  */
-export function typeRefToString(typeRef: TypeRef): string {
-  if (typeRef.kind === 'NON_NULL') {
-    if (!typeRef.ofType) {
+export const typeReferenceToString = (typeReference: TypeReference): string => {
+  if (typeReference.kind === 'NON_NULL') {
+    if (!typeReference.ofType) {
       return 'Unknown!';
     }
-    return `${typeRefToString(typeRef.ofType)}!`;
+    return `${typeReferenceToString(typeReference.ofType)}!`;
   }
 
-  if (typeRef.kind === 'LIST') {
-    if (!typeRef.ofType) {
+  if (typeReference.kind === 'LIST') {
+    if (!typeReference.ofType) {
       return '[Unknown]';
     }
-    return `[${typeRefToString(typeRef.ofType)}]`;
+    return `[${typeReferenceToString(typeReference.ofType)}]`;
   }
 
-  return typeRef.name ?? 'Unknown';
-}
+  return typeReference.name ?? 'Unknown';
+};
+
+export { typeReferenceToString as typeRefToString };
 
 /**
  * Checks if a TypeRef is required (NON_NULL at top level).
  */
-export function isRequired(typeRef: TypeRef): boolean {
-  return typeRef.kind === 'NON_NULL';
-}
+export const isRequired = (typeReference: TypeReference): boolean =>
+  typeReference.kind === 'NON_NULL';
 
 /**
  * Unwraps a TypeRef to get the underlying named type.
  */
-export function unwrapType(typeRef: TypeRef): TypeRef {
-  if (typeRef.kind === 'NON_NULL' || typeRef.kind === 'LIST') {
-    if (typeRef.ofType) {
-      return unwrapType(typeRef.ofType);
-    }
+export const unwrapType = (typeReference: TypeReference): TypeReference => {
+  if (
+    (typeReference.kind === 'NON_NULL' || typeReference.kind === 'LIST') &&
+    typeReference.ofType
+  ) {
+    return unwrapType(typeReference.ofType);
   }
-  return typeRef;
-}
+  return typeReference;
+};

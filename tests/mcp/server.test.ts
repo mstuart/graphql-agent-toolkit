@@ -5,7 +5,6 @@ import { mockIntrospectionResult } from '../introspection/fixtures.js';
 const mockRequest = vi.fn();
 vi.mock('graphql-request', () => ({
   GraphQLClient: class MockGraphQLClient {
-    constructor() {}
     request = mockRequest;
   },
 }));
@@ -17,7 +16,9 @@ describe('createAgentToolkitServer', () => {
   });
 
   it('should create an MCP server with tools registered', async () => {
-    const { createAgentToolkitServer } = await import('../../src/mcp/server.js');
+    const { createAgentToolkitServer } = await import(
+      /* webpackChunkName: "mcp-server" */ '../../src/mcp/server.js'
+    );
 
     const server = await createAgentToolkitServer({
       endpoint: 'https://example.com/graphql',
@@ -30,7 +31,9 @@ describe('createAgentToolkitServer', () => {
   });
 
   it('should accept custom server name and version', async () => {
-    const { createAgentToolkitServer } = await import('../../src/mcp/server.js');
+    const { createAgentToolkitServer } = await import(
+      /* webpackChunkName: "mcp-server" */ '../../src/mcp/server.js'
+    );
 
     const server = await createAgentToolkitServer(
       { endpoint: 'https://example.com/graphql' },
@@ -41,7 +44,9 @@ describe('createAgentToolkitServer', () => {
   });
 
   it('should pass headers to the introspection fetch', async () => {
-    const { createAgentToolkitServer } = await import('../../src/mcp/server.js');
+    const { createAgentToolkitServer } = await import(
+      /* webpackChunkName: "mcp-server" */ '../../src/mcp/server.js'
+    );
 
     await createAgentToolkitServer({
       endpoint: 'https://example.com/graphql',

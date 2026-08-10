@@ -1,5 +1,7 @@
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
-import { createServer, type Server } from 'node:http';
 import {
   GraphQLSchema,
   GraphQLObjectType,
@@ -9,7 +11,6 @@ import {
   GraphQLList,
   GraphQLInt,
   graphql,
-  getIntrospectionQuery,
 } from 'graphql';
 import { fetchSchema } from '../../src/introspection/fetcher.js';
 import { parseSchema } from '../../src/introspection/parser.js';
@@ -17,100 +18,100 @@ import { buildOperation } from '../../src/operations/builder.js';
 import { createToolsFromSchema } from '../../src/mcp/tool-factory.js';
 import { GraphQLExecutor } from '../../src/mcp/executor.js';
 import { SchemaNavigator } from '../../src/semantic/navigator.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // Define a small test schema
 const UserType: GraphQLObjectType = new GraphQLObjectType({
-  name: 'User',
   fields: () => ({
+    email: { type: new GraphQLNonNull(GraphQLString) },
     id: { type: new GraphQLNonNull(GraphQLID) },
     name: { type: GraphQLString },
-    email: { type: new GraphQLNonNull(GraphQLString) },
   }),
+  name: 'User',
 });
 
 const testSchema = new GraphQLSchema({
   query: new GraphQLObjectType({
-    name: 'Query',
     fields: {
       user: {
-        type: UserType,
-        description: 'Get a user by ID',
         args: {
-          id: { type: new GraphQLNonNull(GraphQLID), description: 'The user ID' },
+          id: { description: 'The user ID', type: new GraphQLNonNull(GraphQLID) },
         },
-        resolve: (_root, args) => ({
-          id: args.id,
-          name: 'Test User',
+        description: 'Get a user by ID',
+        resolve: (_root, parameters) => ({
           email: 'test@example.com',
+          id: parameters.id,
+          name: 'Test User',
         }),
+        type: UserType,
       },
       users: {
-        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(UserType))),
-        description: 'List all users',
         args: {
-          limit: { type: GraphQLInt, description: 'Max results' },
+          limit: { description: 'Max results', type: GraphQLInt },
         },
-        resolve: (_root, args) => {
-          const limit = args.limit ?? 2;
-          return Array.from({ length: limit }, (_, i) => ({
-            id: String(i + 1),
-            name: `User ${i + 1}`,
-            email: `user${i + 1}@example.com`,
+        description: 'List all users',
+        resolve: (_root, parameters) => {
+          const limit = parameters.limit ?? 2;
+          return Array.from({ length: limit }, (_, index) => ({
+            email: `user${index + 1}@example.com`,
+            id: String(index + 1),
+            name: `User ${index + 1}`,
           }));
         },
+        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(UserType))),
       },
     },
+    name: 'Query',
   }),
 });
 
-let server: Server;
-let serverUrl: string;
+const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+  if (request.method !== 'POST') {
+    response.writeHead(405);
+    response.end();
+    return;
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(chunk as Buffer);
+  }
+  const body = JSON.parse(Buffer.concat(chunks).toString());
+
+  const result = await graphql({
+    schema: testSchema,
+    source: body.query,
+    variableValues: body.variables,
+  });
+
+  response.writeHead(200, { 'Content-Type': 'application/json' });
+  response.end(JSON.stringify(result));
+};
+
+const server = createServer(handleRequest);
+const serverState = { url: '' };
 
 beforeAll(async () => {
-  server = createServer(async (req, res) => {
-    if (req.method !== 'POST') {
-      res.writeHead(405);
-      res.end();
-      return;
-    }
-
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) {
-      chunks.push(chunk as Buffer);
-    }
-    const body = JSON.parse(Buffer.concat(chunks).toString());
-
-    const result = await graphql({
-      schema: testSchema,
-      source: body.query,
-      variableValues: body.variables,
-    });
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(result));
-  });
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address();
-      if (addr && typeof addr === 'object') {
-        serverUrl = `http://127.0.0.1:${addr.port}/graphql`;
-      }
-      resolve();
-    });
-  });
+  const listening = once(server, 'listening');
+  server.listen(0, '127.0.0.1');
+  await listening;
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Test server did not provide a TCP address');
+  }
+  serverState.url = `http://127.0.0.1:${address.port}/graphql`;
 });
 
 afterAll(async () => {
-  await new Promise<void>((resolve) => {
-    server.close(() => resolve());
-  });
+  const closed = once(server, 'close');
+  server.close();
+  await closed;
 });
 
 describe('Full Integration Flow', () => {
   it('should introspect, parse, build operations, create tools, and execute', async () => {
     // Step 1: Introspect
-    const introspectionResult = await fetchSchema({ endpoint: serverUrl });
+    const introspectionResult = await fetchSchema({ endpoint: serverState.url });
     expect(introspectionResult.__schema).toBeDefined();
 
     // Step 2: Parse
@@ -119,7 +120,9 @@ describe('Full Integration Flow', () => {
     expect(schema.types.has('User')).toBe(true);
     expect(schema.types.has('Query')).toBe(true);
 
-    const userType = schema.types.get('User')!;
+    const userType = schema.types.get('User');
+
+    assert.ok(userType);
     expect(userType.fields.map((f) => f.name)).toContain('id');
     expect(userType.fields.map((f) => f.name)).toContain('name');
     expect(userType.fields.map((f) => f.name)).toContain('email');
@@ -136,7 +139,7 @@ describe('Full Integration Flow', () => {
     expect(usersOp.operation).toContain('users');
 
     // Step 4: Create tools
-    const executor = new GraphQLExecutor(serverUrl);
+    const executor = new GraphQLExecutor(serverState.url);
     const tools = createToolsFromSchema(schema, executor);
 
     const queryTools = tools.filter((t) => t.name.startsWith('query_'));
@@ -144,7 +147,8 @@ describe('Full Integration Flow', () => {
     expect(queryTools.map((t) => t.name)).toContain('query_users');
 
     // Step 5: Execute a query through a tool
-    const userTool = tools.find((t) => t.name === 'query_user')!;
+    const userTool = tools.find((t) => t.name === 'query_user');
+    assert.ok(userTool);
     const result = await userTool.execute({ id: '42' });
     const parsed = JSON.parse(result);
 
@@ -155,12 +159,14 @@ describe('Full Integration Flow', () => {
   });
 
   it('should execute list queries correctly', async () => {
-    const introspectionResult = await fetchSchema({ endpoint: serverUrl });
+    const introspectionResult = await fetchSchema({ endpoint: serverState.url });
     const schema = parseSchema(introspectionResult);
-    const executor = new GraphQLExecutor(serverUrl);
+    const executor = new GraphQLExecutor(serverState.url);
     const tools = createToolsFromSchema(schema, executor);
 
-    const usersTool = tools.find((t) => t.name === 'query_users')!;
+    const usersTool = tools.find((t) => t.name === 'query_users');
+
+    assert.ok(usersTool);
     const result = await usersTool.execute({ limit: 3 });
     const parsed = JSON.parse(result);
 
@@ -170,7 +176,7 @@ describe('Full Integration Flow', () => {
   });
 
   it('should support semantic navigation', async () => {
-    const introspectionResult = await fetchSchema({ endpoint: serverUrl });
+    const introspectionResult = await fetchSchema({ endpoint: serverState.url });
     const schema = parseSchema(introspectionResult);
 
     const navigator = new SchemaNavigator();

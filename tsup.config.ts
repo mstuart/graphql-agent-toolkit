@@ -1,16 +1,16 @@
 import { defineConfig } from 'tsup';
-import pkg from './package.json';
+import package_ from './package.json';
 
 export default defineConfig({
+  clean: true,
+  define: {
+    'process.env.PACKAGE_VERSION': JSON.stringify(package_.version),
+  },
+  dts: true,
   entry: ['src/index.ts', 'src/cli.ts'],
   format: ['esm', 'cjs'],
-  dts: true,
-  splitting: false,
-  sourcemap: true,
-  clean: true,
-  target: 'node18',
   shims: true,
-  define: {
-    'process.env.PACKAGE_VERSION': JSON.stringify(pkg.version),
-  },
+  sourcemap: true,
+  splitting: false,
+  target: 'node18',
 });

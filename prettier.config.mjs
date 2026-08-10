@@ -2,9 +2,9 @@ import config from 'ultracite/prettier';
 
 export default {
   ...config,
-  singleQuote: true,
   printWidth: 100,
   semi: true,
+  singleQuote: true,
   tabWidth: 2,
   trailingComma: 'all',
 };

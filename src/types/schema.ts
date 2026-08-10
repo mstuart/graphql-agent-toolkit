@@ -1,7 +1,7 @@
 export interface SchemaField {
   name: string;
   description: string | null;
-  type: TypeRef;
+  type: TypeReference;
   args: SchemaArgument[];
   isDeprecated: boolean;
 }
@@ -9,27 +9,25 @@ export interface SchemaField {
 export interface SchemaArgument {
   name: string;
   description: string | null;
-  type: TypeRef;
+  type: TypeReference;
   defaultValue: string | null;
 }
 
-export interface TypeRef {
-  kind:
-    | 'SCALAR'
-    | 'OBJECT'
-    | 'INTERFACE'
-    | 'UNION'
-    | 'ENUM'
-    | 'INPUT_OBJECT'
-    | 'LIST'
-    | 'NON_NULL';
+export interface TypeReference {
+  // GraphQL introspection defines this closed set of type kinds.
+  // eslint-disable-next-line sonarjs/max-union-size
+  kind: 'SCALAR' | 'OBJECT' | 'INTERFACE' | 'UNION' | 'ENUM' | 'INPUT_OBJECT' | 'LIST' | 'NON_NULL';
   name: string | null;
-  ofType: TypeRef | null;
+  ofType: TypeReference | null;
 }
+
+// Preserve the original public type name for existing consumers.
+// eslint-disable-next-line unicorn/name-replacements
+export type TypeRef = TypeReference;
 
 export interface SchemaType {
   name: string;
-  kind: TypeRef['kind'];
+  kind: TypeReference['kind'];
   description: string | null;
   fields: SchemaField[];
   inputFields: SchemaArgument[];

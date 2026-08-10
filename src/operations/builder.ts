@@ -1,5 +1,5 @@
+import { typeReferenceToString, isRequired, unwrapType } from './variables.js';
 import type { ParsedSchema, SchemaField } from '../types/index.js';
-import { typeRefToString, isRequired, unwrapType } from './variables.js';
 
 export interface VariableDefinition {
   name: string;
@@ -22,7 +22,7 @@ export interface BuildOperationOptions {
 
 const SCALAR_KINDS = new Set(['SCALAR', 'ENUM']);
 
-function isScalarLike(schema: ParsedSchema, field: SchemaField): boolean {
+const isScalarLike = (schema: ParsedSchema, field: SchemaField): boolean => {
   const unwrapped = unwrapType(field.type);
   if (SCALAR_KINDS.has(unwrapped.kind)) {
     return true;
@@ -35,17 +35,19 @@ function isScalarLike(schema: ParsedSchema, field: SchemaField): boolean {
     }
   }
   return false;
+};
+
+interface SelectionContext {
+  currentDepth: number;
+  indentLevel: number;
+  isDeprecatedIncluded: boolean;
+  maxDepth: number;
+  schema: ParsedSchema;
+  visited: Set<string>;
 }
 
-function buildSelectionSet(
-  schema: ParsedSchema,
-  typeName: string,
-  currentDepth: number,
-  maxDepth: number,
-  visited: Set<string>,
-  includeDeprecated: boolean,
-  indentLevel: number = 2,
-): string {
+const buildSelectionSet = (typeName: string, context: SelectionContext): string => {
+  const { currentDepth, indentLevel, isDeprecatedIncluded, maxDepth, schema, visited } = context;
   if (currentDepth >= maxDepth) {
     return '';
   }
@@ -62,19 +64,20 @@ function buildSelectionSet(
   if (visited.has(typeName)) {
     // Only include scalar fields to break the cycle
     const scalarFields = type.fields
-      .filter((f) => !f.isDeprecated || includeDeprecated)
+      .filter((field) => !field.isDeprecated || isDeprecatedIncluded)
       .filter((f) => isScalarLike(schema, f));
 
     if (scalarFields.length === 0) {
       return '';
     }
 
-    return `{\n${scalarFields.map((f) => `${fieldIndent}${f.name}`).join('\n')}\n${closingIndent}}`;
+    const scalarLines = scalarFields.map((field) => `${fieldIndent}${field.name}`).join('\n');
+    return `{\n${scalarLines}\n${closingIndent}}`;
   }
 
   visited.add(typeName);
 
-  const fields = type.fields.filter((f) => !f.isDeprecated || includeDeprecated);
+  const fields = type.fields.filter((field) => !field.isDeprecated || isDeprecatedIncluded);
   const lines: string[] = [];
 
   for (const field of fields) {
@@ -83,15 +86,12 @@ function buildSelectionSet(
     if (isScalarLike(schema, field)) {
       lines.push(`${fieldIndent}${field.name}`);
     } else if (unwrapped.name) {
-      const nestedSelection = buildSelectionSet(
-        schema,
-        unwrapped.name,
-        currentDepth + 1,
-        maxDepth,
-        new Set(visited),
-        includeDeprecated,
-        indentLevel + 1,
-      );
+      const nestedSelection = buildSelectionSet(unwrapped.name, {
+        ...context,
+        currentDepth: currentDepth + 1,
+        indentLevel: indentLevel + 1,
+        visited: new Set(visited),
+      });
       if (nestedSelection) {
         lines.push(`${fieldIndent}${field.name} ${nestedSelection}`);
       }
@@ -105,19 +105,17 @@ function buildSelectionSet(
   }
 
   return `{\n${lines.join('\n')}\n${closingIndent}}`;
-}
+};
 
-function capitalize(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
+const capitalize = (input: string): string => input.charAt(0).toUpperCase() + input.slice(1);
 
-export function buildOperation(
+export const buildOperation = (
   schema: ParsedSchema,
   rootFieldName: string,
   options?: BuildOperationOptions,
-): GeneratedOperation {
+): GeneratedOperation => {
   const maxDepth = options?.maxDepth ?? 2;
-  const includeDeprecated = options?.includeDeprecated ?? false;
+  const isDeprecatedIncluded = options?.includeDeprecated ?? false;
 
   // Look up the field in query type first, then mutation type
   let operationType: 'query' | 'mutation' = 'query';
@@ -145,45 +143,46 @@ export function buildOperation(
   const operationName = `${capitalize(rootFieldName)}${capitalize(operationType)}`;
 
   // Build variable definitions from arguments
-  const variables: VariableDefinition[] = rootField.args.map((arg) => ({
-    name: arg.name,
-    type: typeRefToString(arg.type),
-    required: isRequired(arg.type),
-    description: arg.description,
+  const variables: VariableDefinition[] = rootField.args.map((argument) => ({
+    description: argument.description,
+    name: argument.name,
+    required: isRequired(argument.type),
+    type: typeReferenceToString(argument.type),
   }));
 
   // Build the variable definitions string for the operation
-  const varDefs = variables.length > 0
-    ? `(${variables.map((v) => `$${v.name}: ${v.type}`).join(', ')})`
-    : '';
+  const variableDefinitions = variables
+    .map((variable) => `$${variable.name}: ${variable.type}`)
+    .join(', ');
+  const variableDefs = variables.length > 0 ? `(${variableDefinitions})` : '';
 
   // Build argument passing string
-  const argsPassing = rootField.args.length > 0
-    ? `(${rootField.args.map((a) => `${a.name}: $${a.name}`).join(', ')})`
-    : '';
+  const argumentAssignments = rootField.args
+    .map((argument) => `${argument.name}: $${argument.name}`)
+    .join(', ');
+  const argumentsPassing = rootField.args.length > 0 ? `(${argumentAssignments})` : '';
 
   // Build selection set based on return type
   const unwrapped = unwrapType(rootField.type);
-  let selectionSet = '';
+  const nestedSelection =
+    !isScalarLike(schema, rootField) && unwrapped.name
+      ? buildSelectionSet(unwrapped.name, {
+          currentDepth: 0,
+          indentLevel: 1,
+          isDeprecatedIncluded,
+          maxDepth,
+          schema,
+          visited: new Set(),
+        })
+      : '';
+  const selectionSet = nestedSelection ? ` ${nestedSelection}` : '';
 
-  if (!isScalarLike(schema, rootField) && unwrapped.name) {
-    selectionSet = ` ${buildSelectionSet(
-      schema,
-      unwrapped.name,
-      0,
-      maxDepth,
-      new Set(),
-      includeDeprecated,
-      1,
-    )}`;
-  }
-
-  const operation = `${operationType} ${operationName}${varDefs} {\n  ${rootFieldName}${argsPassing}${selectionSet}\n}`;
+  const operation = `${operationType} ${operationName}${variableDefs} {\n  ${rootFieldName}${argumentsPassing}${selectionSet}\n}`;
 
   return {
     operation,
     operationName,
-    variables,
     operationType,
+    variables,
   };
-}
+};
