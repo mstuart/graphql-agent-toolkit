@@ -2,139 +2,137 @@ import { describe, it, expect } from 'vitest';
 import { generateMockData, createMockExecutor } from '../../src/mock/index.js';
 import type { ParsedSchema, SchemaType, SchemaField } from '../../src/types/schema.js';
 
-function makeField(
+const defineType = (types: Map<string, SchemaType>, name: string, type: SchemaType): void => {
+  types.set(name, type);
+};
+
+interface FieldOptions {
+  description?: string | null;
+  kind?: SchemaField['type']['kind'];
+  parameters?: SchemaField['args'];
+}
+
+const makeField = (
   name: string,
   typeName: string,
-  kind: string = 'OBJECT',
-  args: SchemaField['args'] = [],
-  description: string | null = null,
-): SchemaField {
-  return {
-    name,
-    description,
-    type: { kind: kind as any, name: typeName, ofType: null },
-    args,
-    isDeprecated: false,
-  };
-}
+  { description = null, kind = 'OBJECT', parameters = [] }: FieldOptions = {},
+): SchemaField => ({
+  args: parameters,
+  description,
+  isDeprecated: false,
+  name,
+  type: { kind, name: typeName, ofType: null },
+});
 
-function makeListField(name: string, typeName: string, kind: string = 'OBJECT'): SchemaField {
-  return {
-    name,
-    description: null,
-    type: { kind: 'LIST', name: null, ofType: { kind: kind as any, name: typeName, ofType: null } },
-    args: [],
-    isDeprecated: false,
-  };
-}
+const makeRequiredArgument = (name: string, typeName = 'String'): SchemaField['args'][number] => ({
+  defaultValue: null,
+  description: null,
+  name,
+  type: {
+    kind: 'NON_NULL',
+    name: null,
+    ofType: { kind: 'SCALAR', name: typeName, ofType: null },
+  },
+});
 
-function makeRequiredArg(name: string, typeName: string = 'String'): SchemaField['args'][number] {
-  return {
-    name,
-    description: null,
-    type: { kind: 'NON_NULL', name: null, ofType: { kind: 'SCALAR', name: typeName, ofType: null } },
-    defaultValue: null,
-  };
-}
-
-function buildTestSchema(): ParsedSchema {
+const buildTestSchema = (): ParsedSchema => {
   const types = new Map<string, SchemaType>();
 
-  types.set('Query', {
-    name: 'Query',
-    kind: 'OBJECT',
+  defineType(types, 'Query', {
     description: null,
+    enumValues: [],
     fields: [
       {
-        name: 'user',
+        args: [makeRequiredArgument('id', 'ID')],
         description: 'Fetch a user by ID',
+        isDeprecated: false,
+        name: 'user',
         type: { kind: 'OBJECT', name: 'User', ofType: null },
-        args: [makeRequiredArg('id', 'ID')],
-        isDeprecated: false,
       },
       {
-        name: 'users',
+        args: [],
         description: 'List all users',
+        isDeprecated: false,
+        name: 'users',
         type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'User', ofType: null } },
-        args: [],
-        isDeprecated: false,
       },
       {
-        name: 'status',
+        args: [],
         description: 'Get system status',
+        isDeprecated: false,
+        name: 'status',
         type: { kind: 'SCALAR', name: 'String', ofType: null },
-        args: [],
-        isDeprecated: false,
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Query',
     possibleTypes: [],
   });
 
-  types.set('User', {
-    name: 'User',
-    kind: 'OBJECT',
+  defineType(types, 'User', {
     description: null,
+    enumValues: [],
     fields: [
-      makeField('id', 'ID', 'SCALAR'),
-      makeField('name', 'String', 'SCALAR'),
-      makeField('age', 'Int', 'SCALAR'),
-      makeField('score', 'Float', 'SCALAR'),
-      makeField('active', 'Boolean', 'SCALAR'),
-      makeField('role', 'Role', 'ENUM'),
+      makeField('id', 'ID', { kind: 'SCALAR' }),
+      makeField('name', 'String', { kind: 'SCALAR' }),
+      makeField('age', 'Int', { kind: 'SCALAR' }),
+      makeField('score', 'Float', { kind: 'SCALAR' }),
+      makeField('active', 'Boolean', { kind: 'SCALAR' }),
+      makeField('role', 'Role', { kind: 'ENUM' }),
       {
-        name: 'posts',
-        description: null,
-        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'Post', ofType: null } },
         args: [],
+        description: null,
         isDeprecated: false,
+        name: 'posts',
+        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'Post', ofType: null } },
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'User',
     possibleTypes: [],
   });
 
-  types.set('Post', {
-    name: 'Post',
-    kind: 'OBJECT',
+  defineType(types, 'Post', {
     description: null,
+    enumValues: [],
     fields: [
-      makeField('id', 'ID', 'SCALAR'),
-      makeField('title', 'String', 'SCALAR'),
-      makeField('published', 'Boolean', 'SCALAR'),
+      makeField('id', 'ID', { kind: 'SCALAR' }),
+      makeField('title', 'String', { kind: 'SCALAR' }),
+      makeField('published', 'Boolean', { kind: 'SCALAR' }),
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Post',
     possibleTypes: [],
   });
 
-  types.set('Role', {
-    name: 'Role',
-    kind: 'ENUM',
+  defineType(types, 'Role', {
     description: null,
+    enumValues: [
+      { description: null, name: 'ADMIN' },
+      { description: null, name: 'USER' },
+      { description: null, name: 'GUEST' },
+    ],
     fields: [],
     inputFields: [],
-    enumValues: [
-      { name: 'ADMIN', description: null },
-      { name: 'USER', description: null },
-      { name: 'GUEST', description: null },
-    ],
     interfaces: [],
+    kind: 'ENUM',
+    name: 'Role',
     possibleTypes: [],
   });
 
   return {
-    queryType: 'Query',
     mutationType: null,
+    queryType: 'Query',
     subscriptionType: null,
     types,
   };
-}
+};
 
 describe('generateMockData', () => {
   describe('scalar generation', () => {
@@ -157,7 +155,7 @@ describe('generateMockData', () => {
       const data = generateMockData(schema, 'User');
 
       expect(typeof data.age).toBe('number');
-      expect(Number.isInteger(data.age)).toBe(true);
+      expect(Number.isSafeInteger(data.age)).toBe(true);
     });
 
     it('should generate deterministic Float values', () => {
@@ -192,7 +190,8 @@ describe('generateMockData', () => {
       expect(data.posts).toBeDefined();
       expect(Array.isArray(data.posts)).toBe(true);
       const posts = data.posts as Record<string, unknown>[];
-      expect(posts.length).toBe(3); // default arrayLength
+      // default arrayLength
+      expect(posts).toHaveLength(3);
       expect(posts[0].title).toBe('mock_title');
     });
   });
@@ -266,36 +265,43 @@ describe('generateMockData', () => {
   describe('@mock in description parsing', () => {
     it('should use @mock directive string value from description', () => {
       const types = new Map<string, SchemaType>();
-      types.set('Query', {
-        name: 'Query',
-        kind: 'OBJECT',
+      defineType(types, 'Query', {
         description: null,
-        fields: [
-          makeField('item', 'Item', 'OBJECT'),
-        ],
-        inputFields: [],
         enumValues: [],
+        fields: [makeField('item', 'Item', { kind: 'OBJECT' })],
+        inputFields: [],
         interfaces: [],
+        kind: 'OBJECT',
+        name: 'Query',
         possibleTypes: [],
       });
-      types.set('Item', {
-        name: 'Item',
-        kind: 'OBJECT',
+      defineType(types, 'Item', {
         description: null,
+        enumValues: [],
         fields: [
-          makeField('title', 'String', 'SCALAR', [], 'The item title @mock("Hello World")'),
-          makeField('count', 'Int', 'SCALAR', [], 'Total count @mock(42)'),
-          makeField('enabled', 'Boolean', 'SCALAR', [], 'Is enabled @mock(true)'),
+          makeField('title', 'String', {
+            description: 'The item title @mock("Hello World")',
+            kind: 'SCALAR',
+          }),
+          makeField('count', 'Int', {
+            description: 'Total count @mock(42)',
+            kind: 'SCALAR',
+          }),
+          makeField('enabled', 'Boolean', {
+            description: 'Is enabled @mock(true)',
+            kind: 'SCALAR',
+          }),
         ],
         inputFields: [],
-        enumValues: [],
         interfaces: [],
+        kind: 'OBJECT',
+        name: 'Item',
         possibleTypes: [],
       });
 
       const schema: ParsedSchema = {
-        queryType: 'Query',
         mutationType: null,
+        queryType: 'Query',
         subscriptionType: null,
         types,
       };
@@ -308,32 +314,35 @@ describe('generateMockData', () => {
 
     it('should use @mock(false) directive', () => {
       const types = new Map<string, SchemaType>();
-      types.set('Query', {
-        name: 'Query',
-        kind: 'OBJECT',
+      defineType(types, 'Query', {
         description: null,
-        fields: [makeField('item', 'Item', 'OBJECT')],
-        inputFields: [],
         enumValues: [],
+        fields: [makeField('item', 'Item', { kind: 'OBJECT' })],
+        inputFields: [],
         interfaces: [],
+        kind: 'OBJECT',
+        name: 'Query',
         possibleTypes: [],
       });
-      types.set('Item', {
-        name: 'Item',
-        kind: 'OBJECT',
+      defineType(types, 'Item', {
         description: null,
+        enumValues: [],
         fields: [
-          makeField('active', 'Boolean', 'SCALAR', [], '@mock(false)'),
+          makeField('active', 'Boolean', {
+            description: '@mock(false)',
+            kind: 'SCALAR',
+          }),
         ],
         inputFields: [],
-        enumValues: [],
         interfaces: [],
+        kind: 'OBJECT',
+        name: 'Item',
         possibleTypes: [],
       });
 
       const schema: ParsedSchema = {
-        queryType: 'Query',
         mutationType: null,
+        queryType: 'Query',
         subscriptionType: null,
         types,
       };
@@ -351,31 +360,38 @@ describe('generateMockData', () => {
     });
 
     it('should handle type with no fields', () => {
-      const types = new Map<string, SchemaType>();
-      types.set('Query', {
-        name: 'Query',
-        kind: 'OBJECT',
-        description: null,
-        fields: [],
-        inputFields: [],
-        enumValues: [],
-        interfaces: [],
-        possibleTypes: [],
-      });
-      types.set('Empty', {
-        name: 'Empty',
-        kind: 'OBJECT',
-        description: null,
-        fields: [],
-        inputFields: [],
-        enumValues: [],
-        interfaces: [],
-        possibleTypes: [],
-      });
+      const types = new Map<string, SchemaType>([
+        [
+          'Query',
+          {
+            description: null,
+            enumValues: [],
+            fields: [],
+            inputFields: [],
+            interfaces: [],
+            kind: 'OBJECT',
+            name: 'Query',
+            possibleTypes: [],
+          },
+        ],
+        [
+          'Empty',
+          {
+            description: null,
+            enumValues: [],
+            fields: [],
+            inputFields: [],
+            interfaces: [],
+            kind: 'OBJECT',
+            name: 'Empty',
+            possibleTypes: [],
+          },
+        ],
+      ]);
 
       const schema: ParsedSchema = {
-        queryType: 'Query',
         mutationType: null,
+        queryType: 'Query',
         subscriptionType: null,
         types,
       };
@@ -424,7 +440,8 @@ describe('createMockExecutor', () => {
 
     expect(parsed.data.users).toBeDefined();
     expect(Array.isArray(parsed.data.users)).toBe(true);
-    expect(parsed.data.users.length).toBe(3); // default arrayLength
+    // default arrayLength
+    expect(parsed.data.users).toHaveLength(3);
   });
 
   it('should return scalar values for scalar return types', async () => {
@@ -456,7 +473,7 @@ describe('createMockExecutor', () => {
     const result = await executor.execute(operation);
     const parsed = JSON.parse(result);
 
-    expect(parsed.data.users.length).toBe(5);
+    expect(parsed.data.users).toHaveLength(5);
   });
 
   it('should be deterministic with seed', async () => {

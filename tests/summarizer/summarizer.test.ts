@@ -17,19 +17,23 @@ describe('summarizeResponse', () => {
 
     it('should add _meta to truncated arrays when includeMetadata is true', () => {
       const data = { items: [1, 2, 3, 4, 5, 6] };
-      const result = summarizeResponse(data, { maxItems: 2, includeMetadata: true });
+      const result = summarizeResponse(data, { includeMetadata: true, maxItems: 2 });
 
       const summary = result.summary as Record<string, unknown>;
-      const items = summary.items as any;
-      expect(items._meta).toEqual({ totalCount: 6, showing: 2 });
+      const items = summary.items as unknown[] & {
+        _meta?: { showing: number; totalCount: number };
+      };
+      expect(items._meta).toEqual({ showing: 2, totalCount: 6 });
     });
 
     it('should not add _meta when includeMetadata is false', () => {
       const data = { items: [1, 2, 3, 4, 5, 6] };
-      const result = summarizeResponse(data, { maxItems: 2, includeMetadata: false });
+      const result = summarizeResponse(data, { includeMetadata: false, maxItems: 2 });
 
       const summary = result.summary as Record<string, unknown>;
-      const items = summary.items as any;
+      const items = summary.items as unknown[] & {
+        _meta?: { showing: number; totalCount: number };
+      };
       expect(items._meta).toBeUndefined();
     });
 
@@ -56,8 +60,9 @@ describe('summarizeResponse', () => {
       };
       const result = summarizeResponse(data, { maxDepth: 3 });
 
-      const summary = result.summary as any;
-      expect(summary.level1.level2.level3).toBe('{...1 keys}');
+      expect(result.summary).toMatchObject({
+        level1: { level2: { level3: '{...1 keys}' } },
+      });
     });
 
     it('should cut off arrays at maxDepth', () => {
@@ -70,16 +75,16 @@ describe('summarizeResponse', () => {
       };
       const result = summarizeResponse(data, { maxDepth: 2 });
 
-      const summary = result.summary as any;
-      expect(summary.level1.level2).toBe('{...1 keys}');
+      expect(result.summary).toMatchObject({
+        level1: { level2: '{...1 keys}' },
+      });
     });
 
     it('should preserve content within maxDepth', () => {
       const data = { a: { b: 'hello' } };
       const result = summarizeResponse(data, { maxDepth: 3 });
 
-      const summary = result.summary as any;
-      expect(summary.a.b).toBe('hello');
+      expect(result.summary).toMatchObject({ a: { b: 'hello' } });
     });
   });
 
@@ -89,16 +94,17 @@ describe('summarizeResponse', () => {
       const data = { text: longString };
       const result = summarizeResponse(data, { maxStringLength: 100 });
 
-      const summary = result.summary as any;
-      expect(summary.text).toBe('x'.repeat(100) + '...');
-      expect(summary.text.length).toBe(103); // 100 chars + '...'
+      const summary = result.summary as { text: string };
+      expect(summary.text).toBe(`${'x'.repeat(100)}...`);
+      // 100 chars + '...'
+      expect(summary.text).toHaveLength(103);
     });
 
     it('should not truncate short strings', () => {
       const data = { text: 'hello' };
       const result = summarizeResponse(data, { maxStringLength: 200 });
 
-      const summary = result.summary as any;
+      const summary = result.summary as { text: string };
       expect(summary.text).toBe('hello');
     });
   });
@@ -106,8 +112,8 @@ describe('summarizeResponse', () => {
   describe('metadata accuracy', () => {
     it('should report correct totalItems for nested arrays', () => {
       const data = {
-        users: [{ id: 1 }, { id: 2 }, { id: 3 }],
         posts: [{ id: 10 }, { id: 20 }],
+        users: [{ id: 1 }, { id: 2 }, { id: 3 }],
       };
       const result = summarizeResponse(data);
 
@@ -122,7 +128,7 @@ describe('summarizeResponse', () => {
     });
 
     it('should set truncated to false when no truncation occurs', () => {
-      const data = { name: 'hello', count: 5 };
+      const data = { count: 5, name: 'hello' };
       const result = summarizeResponse(data);
 
       expect(result.metadata.truncated).toBe(false);
@@ -158,8 +164,8 @@ describe('formatForLLM', () => {
   it('should produce markdown with headers for object keys', () => {
     const data = {
       users: [
-        { name: 'Alice', age: 30 },
-        { name: 'Bob', age: 25 },
+        { age: 30, name: 'Alice' },
+        { age: 25, name: 'Bob' },
       ],
     };
     const result = formatForLLM(data);
@@ -184,7 +190,7 @@ describe('formatForLLM', () => {
     const data = {
       items: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     };
-    const result = formatForLLM(data, { maxItems: 3, includeMetadata: true });
+    const result = formatForLLM(data, { includeMetadata: true, maxItems: 3 });
 
     expect(result).toContain('more items');
   });
@@ -198,7 +204,7 @@ describe('formatForLLM', () => {
 
   it('should render nested objects with bold field names', () => {
     const data = {
-      users: [{ name: 'Alice', email: 'alice@example.com' }],
+      users: [{ email: 'alice@example.com', name: 'Alice' }],
     };
     const result = formatForLLM(data);
 

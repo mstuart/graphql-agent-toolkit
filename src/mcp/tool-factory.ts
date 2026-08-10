@@ -1,14 +1,19 @@
 import { z } from 'zod';
-import type { ParsedSchema, SchemaField, TypeRef } from '../types/index.js';
 import { buildOperation } from '../operations/index.js';
 import { unwrapType } from '../operations/variables.js';
+import type {
+  ParsedSchema,
+  SchemaField,
+  SchemaType,
+  TypeRef as TypeReference,
+} from '../types/index.js';
 import type { GraphQLExecutor } from './executor.js';
 
 export interface McpToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, z.ZodType>;
-  execute: (args: Record<string, unknown>) => Promise<string>;
+  execute: (parameters: Record<string, unknown>) => Promise<string>;
 }
 
 export interface CreateToolsOptions {
@@ -16,92 +21,106 @@ export interface CreateToolsOptions {
   includeDeprecated?: boolean;
 }
 
+type ZodSchemaConverter = (typeReference: TypeReference, schema: ParsedSchema) => z.ZodType;
+
+const namedTypeToZod = (
+  namedType: SchemaType,
+  schema: ParsedSchema,
+  convertType: ZodSchemaConverter,
+): z.ZodType | undefined => {
+  if (namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
+    const values = namedType.enumValues.map((value) => value.name) as [string, ...string[]];
+    return z.enum(values).optional();
+  }
+
+  if (namedType.kind !== 'INPUT_OBJECT') {
+    return undefined;
+  }
+
+  const shape: Record<string, z.ZodType> = {};
+  for (const field of namedType.inputFields) {
+    const fieldSchema = convertType(field.type, schema);
+    shape[field.name] = field.type.kind === 'NON_NULL' ? fieldSchema : fieldSchema.optional();
+  }
+  return z.object(shape);
+};
+
 /**
  * Maps a GraphQL TypeRef to a Zod schema for validation.
  */
-function typeRefToZod(typeRef: TypeRef, schema: ParsedSchema): z.ZodType {
-  if (typeRef.kind === 'NON_NULL') {
-    if (!typeRef.ofType) return z.unknown();
-    return typeRefToZod(typeRef.ofType, schema);
+const typeReferenceToZod = (typeReference: TypeReference, schema: ParsedSchema): z.ZodType => {
+  if (typeReference.kind === 'NON_NULL') {
+    if (!typeReference.ofType) {
+      return z.unknown();
+    }
+    return typeReferenceToZod(typeReference.ofType, schema);
   }
 
-  if (typeRef.kind === 'LIST') {
-    if (!typeRef.ofType) return z.array(z.unknown());
-    return z.array(typeRefToZod(typeRef.ofType, schema)).optional();
+  if (typeReference.kind === 'LIST') {
+    if (!typeReference.ofType) {
+      return z.array(z.unknown());
+    }
+    return z.array(typeReferenceToZod(typeReference.ofType, schema)).optional();
   }
 
-  const unwrapped = unwrapType(typeRef);
+  const unwrapped = unwrapType(typeReference);
   const typeName = unwrapped.name;
 
   if (typeName) {
-    // Check if it's an enum
     const namedType = schema.types.get(typeName);
-    if (namedType && namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
-      const values = namedType.enumValues.map((v) => v.name) as [string, ...string[]];
-      return z.enum(values).optional();
-    }
-
-    // Check if it's an input object
-    if (namedType && namedType.kind === 'INPUT_OBJECT') {
-      const shape: Record<string, z.ZodType> = {};
-      for (const field of namedType.inputFields) {
-        const fieldSchema = typeRefToZod(field.type, schema);
-        if (field.type.kind === 'NON_NULL') {
-          shape[field.name] = fieldSchema;
-        } else {
-          shape[field.name] = fieldSchema.optional();
-        }
+    if (namedType) {
+      const namedSchema = namedTypeToZod(namedType, schema, typeReferenceToZod);
+      if (namedSchema) {
+        return namedSchema;
       }
-      return z.object(shape);
     }
   }
 
   // Map scalars
   switch (typeName) {
-    case 'String':
+    case 'String': {
       return z.string().optional();
-    case 'Int':
+    }
+    case 'Int': {
       return z.number().int().optional();
-    case 'Float':
+    }
+    case 'Float': {
       return z.number().optional();
-    case 'Boolean':
+    }
+    case 'Boolean': {
       return z.boolean().optional();
-    case 'ID':
+    }
+    case 'ID': {
       return z.string().optional();
-    default:
+    }
+    default: {
       return z.unknown().optional();
+    }
   }
-}
+};
 
 /**
  * Builds the Zod input schema object for a tool from a field's arguments.
  */
-function buildInputSchema(
-  field: SchemaField,
-  schema: ParsedSchema,
-): Record<string, z.ZodType> {
+const buildInputSchema = (field: SchemaField, schema: ParsedSchema): Record<string, z.ZodType> => {
   const shape: Record<string, z.ZodType> = {};
 
-  for (const arg of field.args) {
-    const zodType = typeRefToZod(arg.type, schema);
-    if (arg.type.kind === 'NON_NULL') {
-      shape[arg.name] = zodType;
-    } else {
-      shape[arg.name] = zodType.optional();
-    }
+  for (const argument of field.args) {
+    const zodType = typeReferenceToZod(argument.type, schema);
+    shape[argument.name] = argument.type.kind === 'NON_NULL' ? zodType : zodType.optional();
   }
 
   return shape;
-}
+};
 
 /**
  * Creates MCP tool definitions from a parsed GraphQL schema.
  */
-export function createToolsFromSchema(
+export const createToolsFromSchema = (
   schema: ParsedSchema,
   executor: GraphQLExecutor,
   options?: CreateToolsOptions,
-): McpToolDefinition[] {
+): McpToolDefinition[] => {
   const maxDepth = options?.maxDepth ?? 2;
   const includeDeprecated = options?.includeDeprecated ?? false;
   const tools: McpToolDefinition[] = [];
@@ -110,20 +129,22 @@ export function createToolsFromSchema(
   const queryType = schema.types.get(schema.queryType);
   if (queryType) {
     for (const field of queryType.fields) {
-      if (field.isDeprecated && !includeDeprecated) continue;
+      if (!includeDeprecated && field.isDeprecated) {
+        continue;
+      }
 
       const toolName = `query_${field.name}`;
       const description = field.description || `Query ${field.name}`;
       const inputSchema = buildInputSchema(field, schema);
 
       tools.push({
-        name: toolName,
         description,
-        inputSchema,
-        execute: async (args: Record<string, unknown>) => {
-          const op = buildOperation(schema, field.name, { maxDepth, includeDeprecated });
-          return executor.execute(op.operation, args);
+        execute: async (parameters: Record<string, unknown>) => {
+          const op = buildOperation(schema, field.name, { includeDeprecated, maxDepth });
+          return executor.execute(op.operation, parameters);
         },
+        inputSchema,
+        name: toolName,
       });
     }
   }
@@ -133,24 +154,26 @@ export function createToolsFromSchema(
     const mutationType = schema.types.get(schema.mutationType);
     if (mutationType) {
       for (const field of mutationType.fields) {
-        if (field.isDeprecated && !includeDeprecated) continue;
+        if (!includeDeprecated && field.isDeprecated) {
+          continue;
+        }
 
         const toolName = `mutate_${field.name}`;
         const description = field.description || `Mutation ${field.name}`;
         const inputSchema = buildInputSchema(field, schema);
 
         tools.push({
-          name: toolName,
           description,
-          inputSchema,
-          execute: async (args: Record<string, unknown>) => {
-            const op = buildOperation(schema, field.name, { maxDepth, includeDeprecated });
-            return executor.execute(op.operation, args);
+          execute: async (parameters: Record<string, unknown>) => {
+            const op = buildOperation(schema, field.name, { includeDeprecated, maxDepth });
+            return executor.execute(op.operation, parameters);
           },
+          inputSchema,
+          name: toolName,
         });
       }
     }
   }
 
   return tools;
-}
+};

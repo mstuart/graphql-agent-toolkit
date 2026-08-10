@@ -1,4 +1,4 @@
-import type { ParsedSchema } from '../types/index.js';
+import type { ParsedSchema, TypeReference } from '../types/index.js';
 import type { GraphQLExecutor } from '../mcp/executor.js';
 
 export interface PaginationConfig {
@@ -17,6 +17,51 @@ export interface PaginatedResult<T = unknown> {
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_MAX_PAGES = 10;
 
+const unwrapTypeName = (typeReference: TypeReference): string | null => {
+  if (
+    (typeReference.kind === 'NON_NULL' || typeReference.kind === 'LIST') &&
+    typeReference.ofType
+  ) {
+    return unwrapTypeName(typeReference.ofType);
+  }
+  return typeReference.name;
+};
+
+const hasRelayPagination = (schema: ParsedSchema, typeName: string): boolean => {
+  const type = schema.types.get(typeName);
+  const edgesField = type?.fields.find((field) => field.name === 'edges');
+  const pageInfoField = type?.fields.find((field) => field.name === 'pageInfo');
+  if (!(edgesField && pageInfoField)) {
+    return false;
+  }
+
+  const edgesTypeName = unwrapTypeName(edgesField.type);
+  const pageInfoTypeName = unwrapTypeName(pageInfoField.type);
+  const edgesType = edgesTypeName ? schema.types.get(edgesTypeName) : undefined;
+  const pageInfoType = pageInfoTypeName ? schema.types.get(pageInfoTypeName) : undefined;
+  return Boolean(
+    edgesType?.fields.some((field) => field.name === 'node') &&
+    pageInfoType?.fields.some((field) => field.name === 'hasNextPage') &&
+    pageInfoType.fields.some((field) => field.name === 'endCursor'),
+  );
+};
+
+const hasOffsetPagination = (schema: ParsedSchema, typeName: string): boolean => {
+  const queryType = schema.types.get(schema.queryType);
+  return (
+    queryType?.fields.some((field) => {
+      if (unwrapTypeName(field.type) !== typeName) {
+        return false;
+      }
+      const argumentNames = new Set(field.args.map((argument) => argument.name));
+      return (
+        (argumentNames.has('limit') && argumentNames.has('offset')) ||
+        (argumentNames.has('skip') && argumentNames.has('take'))
+      );
+    }) ?? false
+  );
+};
+
 /**
  * Auto-detect pagination style from a type's fields.
  *
@@ -27,141 +72,128 @@ const DEFAULT_MAX_PAGES = 10;
  *         We detect this by looking for fields on the Query type that return this typeName
  *         and have offset-style arguments.
  */
-export function detectPaginationStyle(
+export const detectPaginationStyle = (
   schema: ParsedSchema,
   typeName: string,
-): 'relay' | 'offset' | 'none' {
-  const type = schema.types.get(typeName);
-  if (!type) return 'none';
-
-  // Check for Relay pattern: edges { node } + pageInfo { hasNextPage, endCursor }
-  const edgesField = type.fields.find((f) => f.name === 'edges');
-  const pageInfoField = type.fields.find((f) => f.name === 'pageInfo');
-
-  if (edgesField && pageInfoField) {
-    // Verify edges has node
-    const edgesTypeName = unwrapTypeName(edgesField.type);
-    if (edgesTypeName) {
-      const edgesType = schema.types.get(edgesTypeName);
-      if (edgesType) {
-        const hasNode = edgesType.fields.some((f) => f.name === 'node');
-        if (hasNode) {
-          // Verify pageInfo has hasNextPage and endCursor
-          const pageInfoTypeName = unwrapTypeName(pageInfoField.type);
-          if (pageInfoTypeName) {
-            const pageInfoType = schema.types.get(pageInfoTypeName);
-            if (pageInfoType) {
-              const hasNextPage = pageInfoType.fields.some((f) => f.name === 'hasNextPage');
-              const hasEndCursor = pageInfoType.fields.some((f) => f.name === 'endCursor');
-              if (hasNextPage && hasEndCursor) {
-                return 'relay';
-              }
-            }
-          }
-        }
-      }
-    }
+): 'relay' | 'offset' | 'none' => {
+  if (hasRelayPagination(schema, typeName)) {
+    return 'relay';
   }
 
-  // Check for offset pattern: look at query fields that return this type
-  // and check if they have limit/offset or skip/take args
-  const queryType = schema.types.get(schema.queryType);
-  if (queryType) {
-    for (const field of queryType.fields) {
-      const returnTypeName = unwrapTypeName(field.type);
-      if (returnTypeName === typeName) {
-        const argNames = field.args.map((a) => a.name);
-        const hasLimitOffset =
-          argNames.includes('limit') && argNames.includes('offset');
-        const hasSkipTake =
-          argNames.includes('skip') && argNames.includes('take');
-        if (hasLimitOffset || hasSkipTake) {
-          return 'offset';
-        }
-      }
-    }
+  if (hasOffsetPagination(schema, typeName)) {
+    return 'offset';
   }
 
   return 'none';
+};
+
+interface PageInfo {
+  endCursor?: string | null;
+  hasNextPage?: boolean;
+  startCursor?: string | null;
 }
 
-/**
- * Execute a paginated query, collecting all pages.
- */
-export async function executePaginated(
-  executor: GraphQLExecutor,
-  operation: string,
-  variables: Record<string, unknown>,
-  config?: PaginationConfig,
-): Promise<PaginatedResult> {
-  const style = config?.style ?? 'auto';
-  const pageSize = config?.pageSize ?? DEFAULT_PAGE_SIZE;
-  const maxPages = config?.maxPages ?? DEFAULT_MAX_PAGES;
-
-  if (style === 'relay' || (style === 'auto' && isRelayOperation(operation))) {
-    return executeRelayPaginated(executor, operation, variables, pageSize, maxPages);
-  }
-
-  if (style === 'offset' || (style === 'auto' && isOffsetOperation(operation))) {
-    return executeOffsetPaginated(executor, operation, variables, pageSize, maxPages);
-  }
-
-  // Fallback: execute once, no pagination
-  const resultStr = await executor.execute(operation, variables);
-  const data = JSON.parse(resultStr);
-  const items = extractItems(data);
-  return {
-    items,
-    totalFetched: items.length,
-    hasMore: false,
-  };
+interface ConnectionData {
+  edges: unknown[];
+  pageInfo: PageInfo;
 }
+
+const findConnectionData = (data: unknown): ConnectionData | null => {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const object = data as Record<string, unknown>;
+  if (Array.isArray(object.edges) && object.pageInfo && typeof object.pageInfo === 'object') {
+    return {
+      edges: object.edges,
+      pageInfo: object.pageInfo as PageInfo,
+    };
+  }
+
+  for (const value of Object.values(object)) {
+    if (!(value && typeof value === 'object') || Array.isArray(value)) {
+      continue;
+    }
+    const found = findConnectionData(value);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+};
+
+const extractItems = (data: unknown): unknown[] => {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (!data || typeof data !== 'object') {
+    return [];
+  }
+
+  for (const value of Object.values(data as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (value && typeof value === 'object') {
+      const items = extractItems(value);
+      if (items.length > 0) {
+        return items;
+      }
+    }
+  }
+
+  return [];
+};
 
 /**
  * Check if operation string looks like a Relay query (has after/first variables and pageInfo).
  */
-function isRelayOperation(operation: string): boolean {
-  return (
-    operation.includes('$after') &&
-    operation.includes('$first') &&
-    operation.includes('pageInfo')
-  );
-}
+const isRelayOperation = (operation: string): boolean =>
+  operation.includes('$after') && operation.includes('$first') && operation.includes('pageInfo');
 
 /**
  * Check if operation string looks like an offset query (has limit/offset or skip/take).
  */
-function isOffsetOperation(operation: string): boolean {
-  return (
-    (operation.includes('$limit') && operation.includes('$offset')) ||
-    (operation.includes('$skip') && operation.includes('$take'))
-  );
+const isOffsetOperation = (operation: string): boolean =>
+  (operation.includes('$limit') && operation.includes('$offset')) ||
+  (operation.includes('$skip') && operation.includes('$take'));
+
+interface PaginationExecutionContext {
+  executor: GraphQLExecutor;
+  maxPages: number;
+  operation: string;
+  pageSize: number;
+  variables: Record<string, unknown>;
 }
 
-async function executeRelayPaginated(
-  executor: GraphQLExecutor,
-  operation: string,
-  variables: Record<string, unknown>,
-  pageSize: number,
-  maxPages: number,
-): Promise<PaginatedResult> {
+const executeRelayPaginated = async ({
+  executor,
+  maxPages,
+  operation,
+  pageSize,
+  variables,
+}: PaginationExecutionContext): Promise<PaginatedResult> => {
   const allItems: unknown[] = [];
   let cursor: string | null = null;
   let startCursor: string | null = null;
   let hasMore = true;
   let pageCount = 0;
 
-  while (hasMore && pageCount < maxPages) {
-    const vars: Record<string, unknown> = {
+  while (hasMore && (pageCount === 0 || Boolean(cursor)) && pageCount < maxPages) {
+    const pageVariables: Record<string, unknown> = {
       ...variables,
       first: pageSize,
     };
     if (cursor) {
-      vars.after = cursor;
+      pageVariables.after = cursor;
     }
 
-    const resultStr = await executor.execute(operation, vars);
-    const data = JSON.parse(resultStr);
+    // Each request depends on the cursor returned by the previous page.
+    // eslint-disable-next-line no-await-in-loop
+    const resultString = await executor.execute(operation, pageVariables);
+    const data = JSON.parse(resultString);
 
     // Extract edges and pageInfo from the response
     const connectionData = findConnectionData(data);
@@ -171,9 +203,10 @@ async function executeRelayPaginated(
     }
 
     const { edges, pageInfo } = connectionData;
+    const { endCursor = null, hasNextPage = false, startCursor: pageStartCursor } = pageInfo;
 
-    if (pageCount === 0 && pageInfo.startCursor) {
-      startCursor = pageInfo.startCursor;
+    if (pageCount === 0 && pageStartCursor) {
+      startCursor = pageStartCursor;
     }
 
     // Extract nodes from edges
@@ -185,62 +218,63 @@ async function executeRelayPaginated(
       }
     }
 
-    hasMore = pageInfo.hasNextPage ?? false;
-    cursor = pageInfo.endCursor ?? null;
-    pageCount++;
-
-    if (!hasMore || !cursor) break;
+    hasMore = hasNextPage;
+    // The cursor is loop-carried state and is also returned to the caller.
+    // eslint-disable-next-line sonarjs/no-redundant-assignments
+    cursor = endCursor;
+    pageCount += 1;
   }
 
   const result: PaginatedResult = {
+    hasMore,
     items: allItems,
     totalFetched: allItems.length,
-    hasMore,
   };
 
   if (startCursor || cursor) {
     result.cursors = {
-      start: startCursor ?? '',
       end: cursor ?? '',
+      start: startCursor ?? '',
     };
   }
 
   return result;
-}
+};
 
-async function executeOffsetPaginated(
-  executor: GraphQLExecutor,
-  operation: string,
-  variables: Record<string, unknown>,
-  pageSize: number,
-  maxPages: number,
-): Promise<PaginatedResult> {
+const executeOffsetPaginated = async ({
+  executor,
+  maxPages,
+  operation,
+  pageSize,
+  variables,
+}: PaginationExecutionContext): Promise<PaginatedResult> => {
   const allItems: unknown[] = [];
   let currentOffset = 0;
   let hasMore = true;
   let pageCount = 0;
 
   // Detect whether to use limit/offset or skip/take
-  const useSkipTake =
-    operation.includes('$skip') && operation.includes('$take');
+  const useSkipTake = operation.includes('$skip') && operation.includes('$take');
 
   while (hasMore && pageCount < maxPages) {
-    const vars: Record<string, unknown> = { ...variables };
+    const pageVariables: Record<string, unknown> = { ...variables };
 
     if (useSkipTake) {
-      vars.skip = currentOffset;
-      vars.take = pageSize;
+      pageVariables.skip = currentOffset;
+      pageVariables.take = pageSize;
     } else {
-      vars.offset = currentOffset;
-      vars.limit = pageSize;
+      pageVariables.offset = currentOffset;
+      pageVariables.limit = pageSize;
     }
 
-    const resultStr = await executor.execute(operation, vars);
-    const data = JSON.parse(resultStr);
+    // Each request depends on the offset advanced by the previous page.
+    // eslint-disable-next-line no-await-in-loop
+    const resultString = await executor.execute(operation, pageVariables);
+    const data = JSON.parse(resultString);
     const items = extractItems(data);
 
     allItems.push(...items);
-    pageCount++;
+    pageCount += 1;
 
     if (items.length < pageSize) {
       hasMore = false;
@@ -250,78 +284,42 @@ async function executeOffsetPaginated(
   }
 
   return {
+    hasMore,
     items: allItems,
     totalFetched: allItems.length,
-    hasMore,
   };
-}
-
-interface PageInfo {
-  hasNextPage?: boolean;
-  endCursor?: string | null;
-  startCursor?: string | null;
-}
-
-interface ConnectionData {
-  edges: unknown[];
-  pageInfo: PageInfo;
-}
+};
 
 /**
- * Recursively find connection data (edges + pageInfo) in a response object.
+ * Execute a paginated query, collecting all pages.
  */
-function findConnectionData(data: unknown): ConnectionData | null {
-  if (!data || typeof data !== 'object') return null;
+export const executePaginated = async (
+  ...[executor, operation, variables, config]: [
+    GraphQLExecutor,
+    string,
+    Record<string, unknown>,
+    PaginationConfig?,
+  ]
+): Promise<PaginatedResult> => {
+  const style = config?.style ?? 'auto';
+  const pageSize = config?.pageSize ?? DEFAULT_PAGE_SIZE;
+  const maxPages = config?.maxPages ?? DEFAULT_MAX_PAGES;
 
-  const obj = data as Record<string, unknown>;
-
-  // Check if this object directly has edges and pageInfo
-  if (Array.isArray(obj.edges) && obj.pageInfo && typeof obj.pageInfo === 'object') {
-    return {
-      edges: obj.edges,
-      pageInfo: obj.pageInfo as PageInfo,
-    };
+  if (style === 'relay' || (style === 'auto' && isRelayOperation(operation))) {
+    return executeRelayPaginated({ executor, maxPages, operation, pageSize, variables });
   }
 
-  // Recurse into object properties
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const found = findConnectionData(value);
-      if (found) return found;
-    }
+  if (style === 'offset' || (style === 'auto' && isOffsetOperation(operation))) {
+    return executeOffsetPaginated({ executor, maxPages, operation, pageSize, variables });
   }
 
-  return null;
-}
-
-/**
- * Extract array items from a GraphQL response, searching for the first array value.
- */
-function extractItems(data: unknown): unknown[] {
-  if (Array.isArray(data)) return data;
-  if (!data || typeof data !== 'object') return [];
-
-  const obj = data as Record<string, unknown>;
-  for (const value of Object.values(obj)) {
-    if (Array.isArray(value)) return value;
-    if (value && typeof value === 'object') {
-      const items = extractItems(value);
-      if (items.length > 0) return items;
-    }
-  }
-
-  return [];
-}
-
-/**
- * Unwrap a TypeRef to get the named type.
- */
-function unwrapTypeName(typeRef: { kind: string; name: string | null; ofType: unknown | null }): string | null {
-  if (typeRef.kind === 'NON_NULL' || typeRef.kind === 'LIST') {
-    if (typeRef.ofType) {
-      return unwrapTypeName(typeRef.ofType as { kind: string; name: string | null; ofType: unknown | null });
-    }
-    return null;
-  }
-  return typeRef.name;
-}
+  // Fallback: execute once, no pagination
+  const resultString = await executor.execute(operation, variables);
+  const data = JSON.parse(resultString);
+  const items = extractItems(data);
+  return {
+    hasMore: false,
+    items,
+    totalFetched: items.length,
+  };
+};
