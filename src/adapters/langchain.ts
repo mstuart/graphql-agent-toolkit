@@ -1,7 +1,12 @@
 import { z } from 'zod';
-import type { ParsedSchema, SchemaField, TypeRef } from '../types/index.js';
 import { buildOperation } from '../operations/index.js';
 import { unwrapType } from '../operations/variables.js';
+import type {
+  ParsedSchema,
+  SchemaField,
+  SchemaType,
+  TypeRef as TypeReference,
+} from '../types/index.js';
 import type { GraphQLExecutor } from '../mcp/executor.js';
 
 export interface LangChainToolConfig {
@@ -22,165 +27,216 @@ interface AdapterOptions {
   maxDepth?: number;
 }
 
+type JsonSchemaConverter = (
+  typeReference: TypeReference,
+  schema: ParsedSchema,
+) => Record<string, unknown>;
+
+type ZodSchemaConverter = (typeReference: TypeReference, schema: ParsedSchema) => z.ZodType;
+
+const namedTypeToJsonSchema = (
+  namedType: SchemaType,
+  schema: ParsedSchema,
+  convertType: JsonSchemaConverter,
+): Record<string, unknown> | undefined => {
+  if (namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
+    return { enum: namedType.enumValues.map((value) => value.name), type: 'string' };
+  }
+
+  if (namedType.kind !== 'INPUT_OBJECT') {
+    return undefined;
+  }
+
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  for (const field of namedType.inputFields) {
+    properties[field.name] = convertType(field.type, schema);
+    if (field.type.kind === 'NON_NULL') {
+      required.push(field.name);
+    }
+  }
+  const result: Record<string, unknown> = { properties, type: 'object' };
+  if (required.length > 0) {
+    result.required = required;
+  }
+  return result;
+};
+
+const namedTypeToZod = (
+  namedType: SchemaType,
+  schema: ParsedSchema,
+  convertType: ZodSchemaConverter,
+): z.ZodType | undefined => {
+  if (namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
+    const values = namedType.enumValues.map((value) => value.name) as [string, ...string[]];
+    return z.enum(values).optional();
+  }
+
+  if (namedType.kind !== 'INPUT_OBJECT') {
+    return undefined;
+  }
+
+  const shape: Record<string, z.ZodType> = {};
+  for (const field of namedType.inputFields) {
+    const fieldSchema = convertType(field.type, schema);
+    shape[field.name] = field.type.kind === 'NON_NULL' ? fieldSchema : fieldSchema.optional();
+  }
+  return z.object(shape);
+};
+
 /**
  * Convert a GraphQL TypeRef to a JSON Schema representation.
  */
-function typeRefToJsonSchema(typeRef: TypeRef, schema: ParsedSchema): Record<string, unknown> {
-  if (typeRef.kind === 'NON_NULL') {
-    if (!typeRef.ofType) return { type: 'string' };
-    return typeRefToJsonSchema(typeRef.ofType, schema);
+const typeReferenceToJsonSchema = (
+  typeReference: TypeReference,
+  schema: ParsedSchema,
+): Record<string, unknown> => {
+  if (typeReference.kind === 'NON_NULL') {
+    if (!typeReference.ofType) {
+      return { type: 'string' };
+    }
+    return typeReferenceToJsonSchema(typeReference.ofType, schema);
   }
 
-  if (typeRef.kind === 'LIST') {
-    if (!typeRef.ofType) return { type: 'array', items: {} };
-    return { type: 'array', items: typeRefToJsonSchema(typeRef.ofType, schema) };
+  if (typeReference.kind === 'LIST') {
+    if (!typeReference.ofType) {
+      return { items: {}, type: 'array' };
+    }
+    return { items: typeReferenceToJsonSchema(typeReference.ofType, schema), type: 'array' };
   }
 
-  const unwrapped = unwrapType(typeRef);
+  const unwrapped = unwrapType(typeReference);
   const typeName = unwrapped.name;
 
   if (typeName) {
     const namedType = schema.types.get(typeName);
-    if (namedType && namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
-      return { type: 'string', enum: namedType.enumValues.map((v) => v.name) };
-    }
-
-    if (namedType && namedType.kind === 'INPUT_OBJECT') {
-      const properties: Record<string, unknown> = {};
-      const required: string[] = [];
-      for (const field of namedType.inputFields) {
-        properties[field.name] = typeRefToJsonSchema(field.type, schema);
-        if (field.type.kind === 'NON_NULL') {
-          required.push(field.name);
-        }
+    if (namedType) {
+      const namedSchema = namedTypeToJsonSchema(namedType, schema, typeReferenceToJsonSchema);
+      if (namedSchema) {
+        return namedSchema;
       }
-      const result: Record<string, unknown> = { type: 'object', properties };
-      if (required.length > 0) result.required = required;
-      return result;
     }
   }
 
   switch (typeName) {
     case 'String':
-    case 'ID':
+    case 'ID': {
       return { type: 'string' };
-    case 'Int':
+    }
+    case 'Int': {
       return { type: 'integer' };
-    case 'Float':
+    }
+    case 'Float': {
       return { type: 'number' };
-    case 'Boolean':
+    }
+    case 'Boolean': {
       return { type: 'boolean' };
-    default:
+    }
+    default: {
       return {};
+    }
   }
-}
+};
 
 /**
  * Convert a GraphQL TypeRef to a Zod schema.
  */
-function typeRefToZod(typeRef: TypeRef, schema: ParsedSchema): z.ZodType {
-  if (typeRef.kind === 'NON_NULL') {
-    if (!typeRef.ofType) return z.unknown();
-    return typeRefToZod(typeRef.ofType, schema);
+const typeReferenceToZod = (typeReference: TypeReference, schema: ParsedSchema): z.ZodType => {
+  if (typeReference.kind === 'NON_NULL') {
+    if (!typeReference.ofType) {
+      return z.unknown();
+    }
+    return typeReferenceToZod(typeReference.ofType, schema);
   }
 
-  if (typeRef.kind === 'LIST') {
-    if (!typeRef.ofType) return z.array(z.unknown()).optional();
-    return z.array(typeRefToZod(typeRef.ofType, schema)).optional();
+  if (typeReference.kind === 'LIST') {
+    if (!typeReference.ofType) {
+      return z.array(z.unknown()).optional();
+    }
+    return z.array(typeReferenceToZod(typeReference.ofType, schema)).optional();
   }
 
-  const unwrapped = unwrapType(typeRef);
+  const unwrapped = unwrapType(typeReference);
   const typeName = unwrapped.name;
 
   if (typeName) {
     const namedType = schema.types.get(typeName);
-    if (namedType && namedType.kind === 'ENUM' && namedType.enumValues.length > 0) {
-      const values = namedType.enumValues.map((v) => v.name) as [string, ...string[]];
-      return z.enum(values).optional();
-    }
-
-    if (namedType && namedType.kind === 'INPUT_OBJECT') {
-      const shape: Record<string, z.ZodType> = {};
-      for (const field of namedType.inputFields) {
-        const fieldSchema = typeRefToZod(field.type, schema);
-        if (field.type.kind === 'NON_NULL') {
-          shape[field.name] = fieldSchema;
-        } else {
-          shape[field.name] = fieldSchema.optional();
-        }
+    if (namedType) {
+      const namedSchema = namedTypeToZod(namedType, schema, typeReferenceToZod);
+      if (namedSchema) {
+        return namedSchema;
       }
-      return z.object(shape);
     }
   }
 
   switch (typeName) {
     case 'String':
-    case 'ID':
+    case 'ID': {
       return z.string().optional();
-    case 'Int':
+    }
+    case 'Int': {
       return z.number().int().optional();
-    case 'Float':
+    }
+    case 'Float': {
       return z.number().optional();
-    case 'Boolean':
+    }
+    case 'Boolean': {
       return z.boolean().optional();
-    default:
+    }
+    default: {
       return z.unknown().optional();
+    }
   }
-}
+};
 
 /**
  * Build JSON Schema for a field's arguments.
  */
-function buildJsonSchema(
-  field: SchemaField,
-  schema: ParsedSchema,
-): Record<string, unknown> {
+const buildJsonSchema = (field: SchemaField, schema: ParsedSchema): Record<string, unknown> => {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
-  for (const arg of field.args) {
-    properties[arg.name] = typeRefToJsonSchema(arg.type, schema);
-    if (arg.type.kind === 'NON_NULL') {
-      required.push(arg.name);
+  for (const argument of field.args) {
+    properties[argument.name] = typeReferenceToJsonSchema(argument.type, schema);
+    if (argument.type.kind === 'NON_NULL') {
+      required.push(argument.name);
     }
   }
 
   const result: Record<string, unknown> = {
-    type: 'object',
     properties,
+    type: 'object',
   };
-  if (required.length > 0) result.required = required;
+  if (required.length > 0) {
+    result.required = required;
+  }
   return result;
-}
+};
 
 /**
  * Build a Zod object schema for a field's arguments.
  */
-function buildZodSchema(
+const buildZodSchema = (
   field: SchemaField,
   schema: ParsedSchema,
-): z.ZodObject<Record<string, z.ZodType>> {
+): z.ZodObject<Record<string, z.ZodType>> => {
   const shape: Record<string, z.ZodType> = {};
 
-  for (const arg of field.args) {
-    const zodType = typeRefToZod(arg.type, schema);
-    if (arg.type.kind === 'NON_NULL') {
-      shape[arg.name] = zodType;
-    } else {
-      shape[arg.name] = zodType.optional();
-    }
+  for (const argument of field.args) {
+    const zodType = typeReferenceToZod(argument.type, schema);
+    shape[argument.name] = argument.type.kind === 'NON_NULL' ? zodType : zodType.optional();
   }
 
   return z.object(shape);
-}
+};
 
 /**
  * Collect all query/mutation fields from the schema.
  */
-function collectRootFields(
+const collectRootFields = (
   schema: ParsedSchema,
-): Array<{ field: SchemaField; operationType: 'query' | 'mutation' }> {
-  const result: Array<{ field: SchemaField; operationType: 'query' | 'mutation' }> = [];
+): { field: SchemaField; operationType: 'query' | 'mutation' }[] => {
+  const result: { field: SchemaField; operationType: 'query' | 'mutation' }[] = [];
 
   const queryType = schema.types.get(schema.queryType);
   if (queryType) {
@@ -199,63 +255,65 @@ function collectRootFields(
   }
 
   return result;
-}
+};
 
 /**
  * Create tools compatible with LangChain's Tool pattern.
  * Each tool's func accepts a JSON string input and returns a JSON string.
  */
-export function createLangChainTools(
+export const createLangChainTools = (
   schema: ParsedSchema,
   executor: GraphQLExecutor,
   options?: AdapterOptions,
-): LangChainToolConfig[] {
+): LangChainToolConfig[] => {
   const maxDepth = options?.maxDepth ?? 2;
   const rootFields = collectRootFields(schema);
 
   return rootFields.map(({ field, operationType }) => {
     const toolName = operationType === 'query' ? `query_${field.name}` : `mutate_${field.name}`;
-    const description = field.description || `${operationType === 'query' ? 'Query' : 'Mutation'} ${field.name}`;
+    const description =
+      field.description || `${operationType === 'query' ? 'Query' : 'Mutation'} ${field.name}`;
     const jsonSchema = buildJsonSchema(field, schema);
 
     return {
-      name: toolName,
       description,
-      schema: jsonSchema,
       func: async (input: string): Promise<string> => {
         const variables = input ? JSON.parse(input) : {};
         const op = buildOperation(schema, field.name, { maxDepth });
         return executor.execute(op.operation, variables);
       },
+      name: toolName,
+      schema: jsonSchema,
     };
   });
-}
+};
 
 /**
  * Create tools compatible with LangChain's StructuredTool pattern.
  * Each tool's func accepts a typed object and returns a JSON string.
  */
-export function createStructuredTools(
+export const createStructuredTools = (
   schema: ParsedSchema,
   executor: GraphQLExecutor,
   options?: AdapterOptions,
-): StructuredToolConfig[] {
+): StructuredToolConfig[] => {
   const maxDepth = options?.maxDepth ?? 2;
   const rootFields = collectRootFields(schema);
 
   return rootFields.map(({ field, operationType }) => {
     const toolName = operationType === 'query' ? `query_${field.name}` : `mutate_${field.name}`;
-    const description = field.description || `${operationType === 'query' ? 'Query' : 'Mutation'} ${field.name}`;
+    const description =
+      field.description || `${operationType === 'query' ? 'Query' : 'Mutation'} ${field.name}`;
     const zodSchema = buildZodSchema(field, schema);
 
     return {
-      name: toolName,
       description,
-      schema: zodSchema,
       func: async (input: Record<string, unknown>): Promise<string> => {
         const op = buildOperation(schema, field.name, { maxDepth });
         return executor.execute(op.operation, input);
       },
+      name: toolName,
+      schema: zodSchema,
     };
   });
-}
+};

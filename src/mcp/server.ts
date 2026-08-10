@@ -1,10 +1,11 @@
+import { isNativeError } from 'node:util/types';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { AgentToolkitConfig } from '../types/index.js';
 import { fetchSchema } from '../introspection/fetcher.js';
 import { parseSchema } from '../introspection/parser.js';
 import { GraphQLExecutor } from './executor.js';
 import { createToolsFromSchema } from './tool-factory.js';
+import type { AgentToolkitConfig } from '../types/index.js';
 
 const packageVersion = process.env.PACKAGE_VERSION || '0.1.0';
 
@@ -16,10 +17,10 @@ export interface AgentToolkitServerOptions {
 /**
  * Creates a fully configured MCP server from a GraphQL endpoint configuration.
  */
-export async function createAgentToolkitServer(
+export const createAgentToolkitServer = async (
   config: AgentToolkitConfig,
   options?: AgentToolkitServerOptions,
-): Promise<McpServer> {
+): Promise<McpServer> => {
   const serverName = options?.serverName ?? 'graphql-agent-toolkit';
   const serverVersion = options?.serverVersion ?? packageVersion;
 
@@ -35,8 +36,8 @@ export async function createAgentToolkitServer(
 
   // Create tools
   const tools = createToolsFromSchema(schema, executor, {
-    maxDepth: config.operationDepth ?? 2,
     includeDeprecated: config.includeDeprecated ?? false,
+    maxDepth: config.operationDepth ?? 2,
   });
 
   // Create MCP server
@@ -50,44 +51,35 @@ export async function createAgentToolkitServer(
     const inputSchema = Object.keys(tool.inputSchema).length > 0 ? tool.inputSchema : undefined;
 
     if (inputSchema) {
-      server.tool(
-        tool.name,
-        tool.description,
-        inputSchema,
-        async (args) => {
-          try {
-            const result = await tool.execute(args as Record<string, unknown>);
-            return {
-              content: [{ type: 'text' as const, text: result }],
-            };
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            return {
-              content: [{ type: 'text' as const, text: `Error: ${message}` }],
-              isError: true,
-            };
-          }
-        },
-      );
+      server.tool(tool.name, tool.description, inputSchema, async (parameters) => {
+        try {
+          const result = await tool.execute(parameters as Record<string, unknown>);
+          return {
+            content: [{ text: result, type: 'text' as const }],
+          };
+        } catch (error) {
+          const message = isNativeError(error) ? error.message : 'Unknown error';
+          return {
+            content: [{ text: `Error: ${message}`, type: 'text' as const }],
+            isError: true,
+          };
+        }
+      });
     } else {
-      server.tool(
-        tool.name,
-        tool.description,
-        async () => {
-          try {
-            const result = await tool.execute({});
-            return {
-              content: [{ type: 'text' as const, text: result }],
-            };
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            return {
-              content: [{ type: 'text' as const, text: `Error: ${message}` }],
-              isError: true,
-            };
-          }
-        },
-      );
+      server.tool(tool.name, tool.description, async () => {
+        try {
+          const result = await tool.execute({});
+          return {
+            content: [{ text: result, type: 'text' as const }],
+          };
+        } catch (error) {
+          const message = isNativeError(error) ? error.message : 'Unknown error';
+          return {
+            content: [{ text: `Error: ${message}`, type: 'text' as const }],
+            isError: true,
+          };
+        }
+      });
     }
   }
 
@@ -96,30 +88,38 @@ export async function createAgentToolkitServer(
     'explore_schema',
     'Explore the GraphQL schema — list types, fields, and arguments',
     {
-      typeName: z.string().optional().describe('Type name to explore. If omitted, lists all types.'),
+      typeName: z
+        .string()
+        .optional()
+        .describe('Type name to explore. If omitted, lists all types.'),
     },
-    async (args) => {
-      if (args.typeName) {
-        const type = schema.types.get(args.typeName);
+    async (parameters) => {
+      if (parameters.typeName) {
+        const type = schema.types.get(parameters.typeName);
         if (!type) {
           return {
-            content: [{ type: 'text' as const, text: `Type "${args.typeName}" not found.` }],
+            content: [{ text: `Type "${parameters.typeName}" not found.`, type: 'text' as const }],
           };
         }
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(type, null, 2) }],
+          content: [{ text: JSON.stringify(type, null, 2), type: 'text' as const }],
         };
       }
 
-      const typeList = Array.from(schema.types.values())
+      const typeList = schema.types
+        .values()
         .filter((t) => !['SCALAR'].includes(t.kind))
-        .map((t) => `${t.kind} ${t.name}${t.description ? ` — ${t.description}` : ''}`);
+        .map((type) => {
+          const description = type.description ? ` — ${type.description}` : '';
+          return `${type.kind} ${type.name}${description}`;
+        })
+        .toArray();
 
       return {
-        content: [{ type: 'text' as const, text: typeList.join('\n') }],
+        content: [{ text: typeList.join('\n'), type: 'text' as const }],
       };
     },
   );
 
   return server;
-}
+};

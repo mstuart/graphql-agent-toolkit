@@ -1,9 +1,12 @@
 import typescript from '@typescript-eslint/eslint-plugin';
 import globals from 'globals';
-import core from 'ultracite/eslint/core';
+import config from 'ultracite/eslint/core';
 
 export default [
-  ...core,
+  ...config,
+  {
+    ignores: ['**/*.json'],
+  },
   {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: { parserOptions: { project: false } },
@@ -20,6 +23,13 @@ export default [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+    },
+  },
+  {
+    files: ['tests/cli/init.test.ts', 'tests/index.test.ts', 'tests/mcp/server.test.ts'],
+    rules: {
+      // Webpack requires inline magic comments to assign stable async chunk names.
+      'no-inline-comments': 'off',
     },
   },
 ];

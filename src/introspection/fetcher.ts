@@ -1,12 +1,14 @@
-import { getIntrospectionQuery, type IntrospectionQuery } from 'graphql';
+import { isNativeError } from 'node:util/types';
+import { getIntrospectionQuery } from 'graphql';
 import { GraphQLClient } from 'graphql-request';
+import type { IntrospectionQuery } from 'graphql';
 
 export interface FetchSchemaOptions {
   endpoint: string;
   headers?: Record<string, string>;
 }
 
-export async function fetchSchema(options: FetchSchemaOptions): Promise<IntrospectionQuery> {
+export const fetchSchema = async (options: FetchSchemaOptions): Promise<IntrospectionQuery> => {
   const client = new GraphQLClient(options.endpoint, {
     headers: options.headers,
   });
@@ -14,11 +16,10 @@ export async function fetchSchema(options: FetchSchemaOptions): Promise<Introspe
   const query = getIntrospectionQuery();
 
   try {
-    const result = await client.request<IntrospectionQuery>(query);
-    return result;
+    return await client.request<IntrospectionQuery>(query);
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to fetch schema from ${options.endpoint}: ${error.message}`, {
+    if (isNativeError(error)) {
+      throw new TypeError(`Failed to fetch schema from ${options.endpoint}: ${error.message}`, {
         cause: error,
       });
     }
@@ -26,4 +27,4 @@ export async function fetchSchema(options: FetchSchemaOptions): Promise<Introspe
       cause: error,
     });
   }
-}
+};

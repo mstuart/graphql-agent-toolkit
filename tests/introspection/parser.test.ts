@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { describe, it, expect } from 'vitest';
 import { parseSchema } from '../../src/introspection/parser.js';
 import { mockIntrospectionResult } from './fixtures.js';
@@ -18,8 +19,12 @@ describe('parseSchema', () => {
   });
 
   it('should filter out introspection types (__ prefix)', () => {
-    const typeNames = Array.from(parsed.types.keys());
-    const introspectionTypes = typeNames.filter((n) => n.startsWith('__'));
+    const introspectionTypes: string[] = [];
+    for (const typeName of parsed.types.keys()) {
+      if (typeName.startsWith('__')) {
+        introspectionTypes.push(typeName);
+      }
+    }
     expect(introspectionTypes).toHaveLength(0);
   });
 
@@ -40,10 +45,13 @@ describe('parseSchema', () => {
   });
 
   it('should parse Query fields correctly', () => {
-    const queryType = parsed.types.get('Query')!;
+    const queryType = parsed.types.get('Query');
+    assert.ok(queryType);
     expect(queryType.fields).toHaveLength(4);
 
-    const userField = queryType.fields.find((f) => f.name === 'user')!;
+    const userField = queryType.fields.find((f) => f.name === 'user');
+
+    assert.ok(userField);
     expect(userField.description).toBe('Fetch a user by ID');
     expect(userField.args).toHaveLength(1);
     expect(userField.args[0].name).toBe('id');
@@ -51,35 +59,44 @@ describe('parseSchema', () => {
   });
 
   it('should parse field arguments with defaults', () => {
-    const queryType = parsed.types.get('Query')!;
-    const usersField = queryType.fields.find((f) => f.name === 'users')!;
-    const limitArg = usersField.args.find((a) => a.name === 'limit')!;
-    expect(limitArg.defaultValue).toBe('10');
+    const queryType = parsed.types.get('Query');
+    assert.ok(queryType);
+    const usersField = queryType.fields.find((f) => f.name === 'users');
+    assert.ok(usersField);
+    const limitArgument = usersField.args.find((a) => a.name === 'limit');
+    assert.ok(limitArgument);
+    expect(limitArgument.defaultValue).toBe('10');
   });
 
   it('should parse deprecated fields', () => {
-    const queryType = parsed.types.get('Query')!;
-    const oldField = queryType.fields.find((f) => f.name === 'oldField')!;
+    const queryType = parsed.types.get('Query');
+    assert.ok(queryType);
+    const oldField = queryType.fields.find((f) => f.name === 'oldField');
+    assert.ok(oldField);
     expect(oldField.isDeprecated).toBe(true);
   });
 
   it('should parse input object types', () => {
-    const inputType = parsed.types.get('CreateUserInput')!;
+    const inputType = parsed.types.get('CreateUserInput');
+    assert.ok(inputType);
     expect(inputType.kind).toBe('INPUT_OBJECT');
     expect(inputType.inputFields).toHaveLength(3);
     expect(inputType.inputFields[0].name).toBe('name');
   });
 
   it('should parse enum types', () => {
-    const enumType = parsed.types.get('UserRole')!;
+    const enumType = parsed.types.get('UserRole');
+    assert.ok(enumType);
     expect(enumType.kind).toBe('ENUM');
     expect(enumType.enumValues).toHaveLength(3);
     expect(enumType.enumValues.map((v) => v.name)).toContain('ADMIN');
   });
 
   it('should parse nested type references correctly', () => {
-    const queryType = parsed.types.get('Query')!;
-    const usersField = queryType.fields.find((f) => f.name === 'users')!;
+    const queryType = parsed.types.get('Query');
+    assert.ok(queryType);
+    const usersField = queryType.fields.find((f) => f.name === 'users');
+    assert.ok(usersField);
     // [User!]!
     expect(usersField.type.kind).toBe('NON_NULL');
     expect(usersField.type.ofType?.kind).toBe('LIST');

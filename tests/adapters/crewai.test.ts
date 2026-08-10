@@ -1,125 +1,125 @@
+import assert from 'node:assert/strict';
 import { describe, it, expect, vi } from 'vitest';
 import { createCrewAITools } from '../../src/adapters/crewai.js';
 import type { ParsedSchema, SchemaType, SchemaField } from '../../src/types/schema.js';
-import type { GraphQLExecutor } from '../../src/mcp/executor.js';
 
-function makeField(name: string, typeName: string, kind: string = 'OBJECT', args: SchemaField['args'] = []): SchemaField {
-  return {
-    name,
-    description: null,
-    type: { kind: kind as any, name: typeName, ofType: null },
-    args,
-    isDeprecated: false,
-  };
-}
+const defineType = (types: Map<string, SchemaType>, name: string, type: SchemaType): void => {
+  types.set(name, type);
+};
 
-function makeArg(name: string, typeName: string = 'String'): SchemaField['args'][number] {
-  return {
-    name,
-    description: null,
-    type: { kind: 'SCALAR', name: typeName, ofType: null },
-    defaultValue: null,
-  };
-}
+const makeField = (
+  name: string,
+  typeName: string,
+  kind: SchemaField['type']['kind'] = 'OBJECT',
+): SchemaField => ({
+  args: [],
+  description: null,
+  isDeprecated: false,
+  name,
+  type: { kind, name: typeName, ofType: null },
+});
 
-function makeRequiredArg(name: string, typeName: string = 'String'): SchemaField['args'][number] {
-  return {
-    name,
-    description: null,
-    type: { kind: 'NON_NULL', name: null, ofType: { kind: 'SCALAR', name: typeName, ofType: null } },
-    defaultValue: null,
-  };
-}
+const makeArgument = (name: string, typeName = 'String'): SchemaField['args'][number] => ({
+  defaultValue: null,
+  description: null,
+  name,
+  type: { kind: 'SCALAR', name: typeName, ofType: null },
+});
 
-function buildTestSchema(): ParsedSchema {
+const makeRequiredArgument = (name: string, typeName = 'String'): SchemaField['args'][number] => ({
+  defaultValue: null,
+  description: null,
+  name,
+  type: {
+    kind: 'NON_NULL',
+    name: null,
+    ofType: { kind: 'SCALAR', name: typeName, ofType: null },
+  },
+});
+
+const buildTestSchema = (): ParsedSchema => {
   const types = new Map<string, SchemaType>();
 
-  types.set('Query', {
-    name: 'Query',
-    kind: 'OBJECT',
+  defineType(types, 'Query', {
     description: null,
+    enumValues: [],
     fields: [
       {
-        name: 'user',
+        args: [makeRequiredArgument('id', 'ID')],
         description: 'Fetch a user by ID',
+        isDeprecated: false,
+        name: 'user',
         type: { kind: 'OBJECT', name: 'User', ofType: null },
-        args: [makeRequiredArg('id', 'ID')],
-        isDeprecated: false,
       },
       {
-        name: 'posts',
+        args: [makeArgument('limit', 'Int'), makeArgument('offset', 'Int')],
         description: 'List posts',
-        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'Post', ofType: null } },
-        args: [makeArg('limit', 'Int'), makeArg('offset', 'Int')],
         isDeprecated: false,
+        name: 'posts',
+        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'Post', ofType: null } },
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Query',
     possibleTypes: [],
   });
 
-  types.set('Mutation', {
-    name: 'Mutation',
-    kind: 'OBJECT',
+  defineType(types, 'Mutation', {
     description: null,
+    enumValues: [],
     fields: [
       {
-        name: 'deleteUser',
+        args: [makeRequiredArgument('id', 'ID')],
         description: 'Delete a user',
-        type: { kind: 'SCALAR', name: 'Boolean', ofType: null },
-        args: [makeRequiredArg('id', 'ID')],
         isDeprecated: false,
+        name: 'deleteUser',
+        type: { kind: 'SCALAR', name: 'Boolean', ofType: null },
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Mutation',
     possibleTypes: [],
   });
 
-  types.set('User', {
+  defineType(types, 'User', {
+    description: null,
+    enumValues: [],
+    fields: [makeField('id', 'ID', 'SCALAR'), makeField('name', 'String', 'SCALAR')],
+    inputFields: [],
+    interfaces: [],
+    kind: 'OBJECT',
     name: 'User',
-    kind: 'OBJECT',
-    description: null,
-    fields: [
-      makeField('id', 'ID', 'SCALAR'),
-      makeField('name', 'String', 'SCALAR'),
-    ],
-    inputFields: [],
-    enumValues: [],
-    interfaces: [],
     possibleTypes: [],
   });
 
-  types.set('Post', {
-    name: 'Post',
-    kind: 'OBJECT',
+  defineType(types, 'Post', {
     description: null,
-    fields: [
-      makeField('id', 'ID', 'SCALAR'),
-      makeField('title', 'String', 'SCALAR'),
-    ],
-    inputFields: [],
     enumValues: [],
+    fields: [makeField('id', 'ID', 'SCALAR'), makeField('title', 'String', 'SCALAR')],
+    inputFields: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Post',
     possibleTypes: [],
   });
 
   return {
-    queryType: 'Query',
     mutationType: 'Mutation',
+    queryType: 'Query',
     subscriptionType: null,
     types,
   };
-}
+};
 
-function createMockExecutor(): GraphQLExecutor {
-  return {
-    execute: vi.fn().mockResolvedValue(JSON.stringify({ data: { user: { id: '1', name: 'Alice' } } })),
-  } as unknown as GraphQLExecutor;
-}
+const createMockExecutor = () => ({
+  execute: vi
+    .fn()
+    .mockResolvedValue(JSON.stringify({ data: { user: { id: '1', name: 'Alice' } } })),
+});
 
 describe('createCrewAITools', () => {
   it('should generate tools for all query and mutation fields', () => {
@@ -139,10 +139,12 @@ describe('createCrewAITools', () => {
     const executor = createMockExecutor();
     const tools = createCrewAITools(schema, executor);
 
-    const userTool = tools.find((t) => t.name === 'query_user')!;
+    const userTool = tools.find((t) => t.name === 'query_user');
+
+    assert.ok(userTool);
     expect(userTool.args_schema).toBeDefined();
     expect(userTool.args_schema.type).toBe('object');
-    expect((userTool as any).schema).toBeUndefined();
+    expect('schema' in userTool).toBe(false);
   });
 
   it('should include required args in args_schema', () => {
@@ -150,9 +152,13 @@ describe('createCrewAITools', () => {
     const executor = createMockExecutor();
     const tools = createCrewAITools(schema, executor);
 
-    const userTool = tools.find((t) => t.name === 'query_user')!;
-    expect((userTool.args_schema.required as string[])).toContain('id');
-    expect((userTool.args_schema.properties as any).id).toEqual({ type: 'string' });
+    const userTool = tools.find((t) => t.name === 'query_user');
+
+    assert.ok(userTool);
+    expect(userTool.args_schema.required as string[]).toContain('id');
+    expect((userTool.args_schema.properties as Record<string, unknown>).id).toEqual({
+      type: 'string',
+    });
   });
 
   it('should map optional args correctly', () => {
@@ -160,10 +166,12 @@ describe('createCrewAITools', () => {
     const executor = createMockExecutor();
     const tools = createCrewAITools(schema, executor);
 
-    const postsTool = tools.find((t) => t.name === 'query_posts')!;
-    const props = postsTool.args_schema.properties as Record<string, any>;
-    expect(props.limit).toEqual({ type: 'integer' });
-    expect(props.offset).toEqual({ type: 'integer' });
+    const postsTool = tools.find((t) => t.name === 'query_posts');
+
+    assert.ok(postsTool);
+    const properties = postsTool.args_schema.properties as Record<string, unknown>;
+    expect(properties.limit).toEqual({ type: 'integer' });
+    expect(properties.offset).toEqual({ type: 'integer' });
     // No required array since both are optional
     expect(postsTool.args_schema.required).toBeUndefined();
   });
@@ -173,7 +181,9 @@ describe('createCrewAITools', () => {
     const executor = createMockExecutor();
     const tools = createCrewAITools(schema, executor);
 
-    const userTool = tools.find((t) => t.name === 'query_user')!;
+    const userTool = tools.find((t) => t.name === 'query_user');
+
+    assert.ok(userTool);
     const result = await userTool.func({ id: '1' });
 
     expect(executor.execute).toHaveBeenCalled();
@@ -183,10 +193,11 @@ describe('createCrewAITools', () => {
   it('should execute mutations correctly', async () => {
     const schema = buildTestSchema();
     const executor = createMockExecutor();
-    (executor.execute as any).mockResolvedValue(JSON.stringify({ data: { deleteUser: true } }));
+    executor.execute.mockResolvedValue(JSON.stringify({ data: { deleteUser: true } }));
 
     const tools = createCrewAITools(schema, executor);
-    const deleteTool = tools.find((t) => t.name === 'mutate_deleteUser')!;
+    const deleteTool = tools.find((t) => t.name === 'mutate_deleteUser');
+    assert.ok(deleteTool);
 
     expect(deleteTool.description).toBe('Delete a user');
     const result = await deleteTool.func({ id: '1' });

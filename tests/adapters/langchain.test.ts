@@ -1,112 +1,120 @@
+import assert from 'node:assert/strict';
 import { describe, it, expect, vi } from 'vitest';
 import { createLangChainTools, createStructuredTools } from '../../src/adapters/langchain.js';
 import type { ParsedSchema, SchemaType, SchemaField } from '../../src/types/schema.js';
 import type { GraphQLExecutor } from '../../src/mcp/executor.js';
 
-function makeField(name: string, typeName: string, kind: string = 'OBJECT', args: SchemaField['args'] = []): SchemaField {
-  return {
-    name,
-    description: null,
-    type: { kind: kind as any, name: typeName, ofType: null },
-    args,
-    isDeprecated: false,
-  };
-}
+const defineType = (types: Map<string, SchemaType>, name: string, type: SchemaType): void => {
+  types.set(name, type);
+};
 
-function makeArg(name: string, typeName: string = 'String'): SchemaField['args'][number] {
-  return {
-    name,
-    description: null,
-    type: { kind: 'SCALAR', name: typeName, ofType: null },
-    defaultValue: null,
-  };
-}
+const makeField = (
+  name: string,
+  typeName: string,
+  kind: SchemaField['type']['kind'] = 'OBJECT',
+): SchemaField => ({
+  args: [],
+  description: null,
+  isDeprecated: false,
+  name,
+  type: { kind, name: typeName, ofType: null },
+});
 
-function makeRequiredArg(name: string, typeName: string = 'String'): SchemaField['args'][number] {
-  return {
-    name,
-    description: null,
-    type: { kind: 'NON_NULL', name: null, ofType: { kind: 'SCALAR', name: typeName, ofType: null } },
-    defaultValue: null,
-  };
-}
+const makeArgument = (name: string, typeName = 'String'): SchemaField['args'][number] => ({
+  defaultValue: null,
+  description: null,
+  name,
+  type: { kind: 'SCALAR', name: typeName, ofType: null },
+});
 
-function buildTestSchema(): ParsedSchema {
+const makeRequiredArgument = (name: string, typeName = 'String'): SchemaField['args'][number] => ({
+  defaultValue: null,
+  description: null,
+  name,
+  type: {
+    kind: 'NON_NULL',
+    name: null,
+    ofType: { kind: 'SCALAR', name: typeName, ofType: null },
+  },
+});
+
+const buildTestSchema = (): ParsedSchema => {
   const types = new Map<string, SchemaType>();
 
-  types.set('Query', {
-    name: 'Query',
-    kind: 'OBJECT',
+  defineType(types, 'Query', {
     description: null,
+    enumValues: [],
     fields: [
       {
-        name: 'user',
+        args: [makeRequiredArgument('id', 'ID')],
         description: 'Fetch a user by ID',
-        type: { kind: 'OBJECT', name: 'User', ofType: null },
-        args: [makeRequiredArg('id', 'ID')],
         isDeprecated: false,
+        name: 'user',
+        type: { kind: 'OBJECT', name: 'User', ofType: null },
       },
       {
-        name: 'users',
+        args: [makeArgument('limit', 'Int')],
         description: 'List all users',
-        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'User', ofType: null } },
-        args: [makeArg('limit', 'Int')],
         isDeprecated: false,
+        name: 'users',
+        type: { kind: 'LIST', name: null, ofType: { kind: 'OBJECT', name: 'User', ofType: null } },
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Query',
     possibleTypes: [],
   });
 
-  types.set('Mutation', {
-    name: 'Mutation',
-    kind: 'OBJECT',
+  defineType(types, 'Mutation', {
     description: null,
+    enumValues: [],
     fields: [
       {
-        name: 'createUser',
+        args: [makeRequiredArgument('name', 'String'), makeArgument('email', 'String')],
         description: 'Create a new user',
-        type: { kind: 'OBJECT', name: 'User', ofType: null },
-        args: [makeRequiredArg('name', 'String'), makeArg('email', 'String')],
         isDeprecated: false,
+        name: 'createUser',
+        type: { kind: 'OBJECT', name: 'User', ofType: null },
       },
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'Mutation',
     possibleTypes: [],
   });
 
-  types.set('User', {
-    name: 'User',
-    kind: 'OBJECT',
+  defineType(types, 'User', {
     description: null,
+    enumValues: [],
     fields: [
       makeField('id', 'ID', 'SCALAR'),
       makeField('name', 'String', 'SCALAR'),
       makeField('email', 'String', 'SCALAR'),
     ],
     inputFields: [],
-    enumValues: [],
     interfaces: [],
+    kind: 'OBJECT',
+    name: 'User',
     possibleTypes: [],
   });
 
   return {
-    queryType: 'Query',
     mutationType: 'Mutation',
+    queryType: 'Query',
     subscriptionType: null,
     types,
   };
-}
+};
 
-function createMockExecutor(): GraphQLExecutor {
-  return {
-    execute: vi.fn().mockResolvedValue(JSON.stringify({ data: { user: { id: '1', name: 'Alice' } } })),
-  } as unknown as GraphQLExecutor;
-}
+const createMockExecutor = (): GraphQLExecutor =>
+  ({
+    execute: vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ data: { user: { id: '1', name: 'Alice' } } })),
+  }) as unknown as GraphQLExecutor;
 
 describe('createLangChainTools', () => {
   it('should generate a tool for each query and mutation field', () => {
@@ -138,8 +146,8 @@ describe('createLangChainTools', () => {
     const userTool = tools.find((t) => t.name === 'query_user');
     expect(userTool?.schema).toBeDefined();
     expect(userTool?.schema.type).toBe('object');
-    expect((userTool?.schema.properties as any).id).toBeDefined();
-    expect((userTool?.schema.required as string[])).toContain('id');
+    expect((userTool?.schema.properties as Record<string, unknown>).id).toBeDefined();
+    expect(userTool?.schema.required as string[]).toContain('id');
   });
 
   it('should execute operations via the executor', async () => {
@@ -147,7 +155,9 @@ describe('createLangChainTools', () => {
     const executor = createMockExecutor();
     const tools = createLangChainTools(schema, executor);
 
-    const userTool = tools.find((t) => t.name === 'query_user')!;
+    const userTool = tools.find((t) => t.name === 'query_user');
+
+    assert.ok(userTool);
     const result = await userTool.func(JSON.stringify({ id: '1' }));
 
     expect(executor.execute).toHaveBeenCalled();
@@ -159,8 +169,10 @@ describe('createLangChainTools', () => {
     const executor = createMockExecutor();
     const tools = createLangChainTools(schema, executor);
 
-    const usersTool = tools.find((t) => t.name === 'query_users')!;
-    const result = await usersTool.func('');
+    const usersTool = tools.find((t) => t.name === 'query_users');
+
+    assert.ok(usersTool);
+    await usersTool.func('');
 
     expect(executor.execute).toHaveBeenCalled();
   });
@@ -194,7 +206,9 @@ describe('createStructuredTools', () => {
     const executor = createMockExecutor();
     const tools = createStructuredTools(schema, executor);
 
-    const userTool = tools.find((t) => t.name === 'query_user')!;
+    const userTool = tools.find((t) => t.name === 'query_user');
+
+    assert.ok(userTool);
     const result = await userTool.func({ id: '1' });
 
     expect(executor.execute).toHaveBeenCalled();
@@ -206,7 +220,9 @@ describe('createStructuredTools', () => {
     const executor = createMockExecutor();
     const tools = createStructuredTools(schema, executor);
 
-    const createUserTool = tools.find((t) => t.name === 'mutate_createUser')!;
+    const createUserTool = tools.find((t) => t.name === 'mutate_createUser');
+
+    assert.ok(createUserTool);
     // Should be able to parse valid input
     const parsed = createUserTool.schema.parse({ name: 'Bob' });
     expect(parsed.name).toBe('Bob');
