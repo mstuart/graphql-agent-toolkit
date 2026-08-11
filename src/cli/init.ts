@@ -30,6 +30,26 @@ const parseHeaders = (headerArguments?: string[]): Record<string, string> => {
   return headers;
 };
 
+const environmentNameForHeader = (key: string): string => {
+  const normalized = key
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/u)
+    .filter(Boolean)
+    .join('_');
+  return `GRAPHQL_AGENT_${normalized || 'HEADER'}`;
+};
+
+const sanitizeHeaderValue = (key: string, value: string): string => {
+  const environmentName = environmentNameForHeader(key);
+  const bearer = value.toLowerCase().startsWith('bearer ');
+  return bearer ? `Bearer \${${environmentName}}` : `\${${environmentName}}`;
+};
+
+const sanitizeHeadersForConfig = (headers: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [key, sanitizeHeaderValue(key, value)]),
+  );
+
 const initialize = async (options: InitOptions): Promise<AgentToolkitConfig> => {
   const headers = parseHeaders(options.header);
 
@@ -57,9 +77,16 @@ const initialize = async (options: InitOptions): Promise<AgentToolkitConfig> => 
   console.log(`  Queries: ${queryCount}`);
   console.log(`  Mutations: ${mutationCount}`);
 
+  const safeHeaders = sanitizeHeadersForConfig(headers);
+  if (Object.keys(headers).length > 0) {
+    console.warn(
+      'Warning: header values were used for introspection but replaced with environment placeholders in generated config.',
+    );
+  }
+
   const config: AgentToolkitConfig = {
     endpoint: options.endpoint,
-    ...(Object.keys(headers).length > 0 && { headers }),
+    ...(Object.keys(safeHeaders).length > 0 && { headers: safeHeaders }),
     includeDeprecated: false,
     operationDepth: 2,
   };

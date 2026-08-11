@@ -168,6 +168,21 @@ describe('createVercelAITools', () => {
     expect(parsedWithLimit.limit).toBe(10);
   });
 
+  it('should reject missing or null GraphQL NON_NULL args and accept nullable null args', () => {
+    const schema = buildTestSchema();
+    const executor = createMockExecutor();
+    const tools = createVercelAITools(schema, executor);
+
+    const userTool = tools['query_user'];
+    expect(userTool.parameters.parse({ id: '123' }).id).toBe('123');
+    expect(() => userTool.parameters.parse({})).toThrow();
+    expect(() => userTool.parameters.parse({ id: null })).toThrow();
+
+    const searchTool = tools['query_search'];
+    expect(searchTool.parameters.parse({ query: 'test' })).toEqual({ query: 'test' });
+    expect(searchTool.parameters.parse({ limit: null, query: 'test' }).limit).toBeNull();
+  });
+
   it('should execute operations via the executor', async () => {
     const schema = buildTestSchema();
     const executor = createMockExecutor();
