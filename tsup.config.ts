@@ -12,5 +12,5 @@ export default defineConfig({
   shims: true,
   sourcemap: true,
   splitting: false,
-  target: 'node18',
+  target: 'node22',
 });

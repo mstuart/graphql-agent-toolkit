@@ -215,6 +215,23 @@ describe('createStructuredTools', () => {
     expect(result).toContain('Alice');
   });
 
+  it('should reject missing or null GraphQL NON_NULL args and accept nullable null args', () => {
+    const schema = buildTestSchema();
+    const executor = createMockExecutor();
+    const tools = createStructuredTools(schema, executor);
+
+    const userTool = tools.find((t) => t.name === 'query_user');
+    assert.ok(userTool);
+    expect(userTool.schema.parse({ id: '1' }).id).toBe('1');
+    expect(() => userTool.schema.parse({})).toThrow();
+    expect(() => userTool.schema.parse({ id: null })).toThrow();
+
+    const usersTool = tools.find((t) => t.name === 'query_users');
+    assert.ok(usersTool);
+    expect(usersTool.schema.parse({})).toEqual({});
+    expect(usersTool.schema.parse({ limit: null }).limit).toBeNull();
+  });
+
   it('should validate input with Zod schema', () => {
     const schema = buildTestSchema();
     const executor = createMockExecutor();

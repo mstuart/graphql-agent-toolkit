@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { z } from 'zod';
 import { describe, it, expect, vi } from 'vitest';
 import { createToolsFromSchema } from '../../src/mcp/tool-factory.js';
 import { parseSchema } from '../../src/introspection/parser.js';
@@ -53,6 +54,23 @@ describe('createToolsFromSchema', () => {
     assert.ok(userTool);
     expect(userTool.inputSchema).toBeDefined();
     expect('id' in userTool.inputSchema).toBe(true);
+  });
+
+  it('should preserve GraphQL required and nullable argument semantics in Zod schemas', () => {
+    const tools = createToolsFromSchema(schema, mockExecutor);
+
+    const userTool = tools.find((t) => t.name === 'query_user');
+    assert.ok(userTool);
+    const userSchema = z.object(userTool.inputSchema);
+    expect(userSchema.parse({ id: '123' }).id).toBe('123');
+    expect(() => userSchema.parse({})).toThrow();
+    expect(() => userSchema.parse({ id: null })).toThrow();
+
+    const usersTool = tools.find((t) => t.name === 'query_users');
+    assert.ok(usersTool);
+    const usersSchema = z.object(usersTool.inputSchema);
+    expect(usersSchema.parse({})).toEqual({});
+    expect(usersSchema.parse({ limit: null }).limit).toBeNull();
   });
 
   it('should use field description as tool description', () => {

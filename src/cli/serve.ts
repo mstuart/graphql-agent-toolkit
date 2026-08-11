@@ -25,6 +25,40 @@ const parseHeaders = (headerValues?: string[]): Record<string, string> => {
   return headers;
 };
 
+const expandEnvironmentPlaceholders = (value: string): string =>
+  value.replaceAll(
+    /\$\{(?<braced>[A-Z_][A-Z0-9_]*)\}|\$(?<bare>[A-Z_][A-Z0-9_]*)/giu,
+    (match, ...matches) => {
+      const groups = matches.at(-1) as { bare?: string; braced?: string } | undefined;
+      const name = groups?.braced || groups?.bare;
+      if (!name) {
+        return match;
+      }
+      const environmentValue = process.env[name];
+      if (environmentValue === undefined) {
+        console.error(`Warning: environment variable ${name} is not set for configured header.`);
+        return match;
+      }
+      return environmentValue;
+    },
+  );
+
+const resolveHeaderEnvironment = (config: AgentToolkitConfig): AgentToolkitConfig => {
+  if (!config.headers) {
+    return config;
+  }
+
+  return {
+    ...config,
+    headers: Object.fromEntries(
+      Object.entries(config.headers).map(([key, value]) => [
+        key,
+        expandEnvironmentPlaceholders(value),
+      ]),
+    ),
+  };
+};
+
 export const runServe = async (options: ServeOptions): Promise<void> => {
   let config: AgentToolkitConfig;
 
@@ -47,6 +81,8 @@ export const runServe = async (options: ServeOptions): Promise<void> => {
     console.error('Error: Either --config or --endpoint must be specified.');
     process.exit(1);
   }
+
+  config = resolveHeaderEnvironment(config);
 
   console.error(`Starting MCP server for endpoint: ${config.endpoint}`);
 
