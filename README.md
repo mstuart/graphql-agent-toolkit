@@ -8,7 +8,7 @@
   <a href="https://github.com/mstuart/graphql-agent-toolkit/actions/workflows/ci.yml"><img src="https://github.com/mstuart/graphql-agent-toolkit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.npmjs.com/package/graphql-agent-toolkit"><img src="https://img.shields.io/npm/v/graphql-agent-toolkit?label=npm" alt="npm"></a>
-  <img src="https://img.shields.io/badge/node-%E2%89%A518-339933.svg" alt="Node 18+">
+  <img src="https://img.shields.io/badge/node-%E2%89%A522-339933.svg" alt="Node 22+">
   <a href="https://deepwiki.com/mstuart/graphql-agent-toolkit"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
   <a href="https://socket.dev/npm/package/graphql-agent-toolkit"><img src="https://socket.dev/api/badge/npm/package/graphql-agent-toolkit" alt="Socket"></a>
 </p>
@@ -39,7 +39,7 @@ npm install graphql-agent-toolkit graphql
 
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 22.0.0
 - `graphql` >= 16.0.0 (peer dependency)
 - TypeScript >= 5.0 (optional, for type definitions)
 
@@ -67,7 +67,7 @@ import { fetchSchema, parseSchema } from 'graphql-agent-toolkit';
 
 const introspection = await fetchSchema({
   endpoint: 'https://your-api.com/graphql',
-  headers: { Authorization: 'Bearer YOUR_TOKEN' },
+  headers: { Authorization: `Bearer ${process.env.GRAPHQL_AUTH_TOKEN}` },
 });
 
 const schema = parseSchema(introspection);
@@ -109,7 +109,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 const server = await createAgentToolkitServer({
   endpoint: 'https://your-api.com/graphql',
-  headers: { Authorization: 'Bearer YOUR_TOKEN' },
+  headers: { Authorization: `Bearer ${process.env.GRAPHQL_AUTH_TOKEN}` },
   operationDepth: 2,
 });
 
@@ -262,14 +262,27 @@ graphql-agent-toolkit init \
   --output config.json
 ```
 
+`init` uses literal headers only for the introspection request. Generated config replaces header values with environment placeholders such as `Bearer ${GRAPHQL_AGENT_AUTHORIZATION}` so auth secrets are not persisted.
+
 ### `serve` -- Start MCP server
 
 ```bash
 # From a config file
+export GRAPHQL_AGENT_AUTHORIZATION=your-token
 graphql-agent-toolkit serve --config config.json
 
 # Directly from an endpoint
 graphql-agent-toolkit serve --endpoint https://your-api.com/graphql
+```
+
+### Runnable examples
+
+```bash
+export GRAPHQL_ENDPOINT=https://your-api.com/graphql
+export GRAPHQL_AUTH_TOKEN=your-token # omit for public APIs
+
+node examples/langchain-structured.mjs
+node examples/mcp-server.mjs
 ```
 
 ## MCP Server Usage
@@ -281,7 +294,10 @@ Add to your MCP client configuration (e.g., Claude Desktop):
   "mcpServers": {
     "my-graphql-api": {
       "command": "npx",
-      "args": ["graphql-agent-toolkit", "serve", "--endpoint", "https://your-api.com/graphql"]
+      "env": {
+        "GRAPHQL_AGENT_AUTHORIZATION": "your-token"
+      },
+      "args": ["graphql-agent-toolkit", "serve", "--config", "/absolute/path/to/config.json"]
     }
   }
 }
@@ -363,9 +379,7 @@ The `AgentToolkitConfig` object accepts:
 
 1. Clone the repository
 2. Install dependencies: `npm install`
-3. Run tests: `npm test`
-4. Build: `npm run build`
-5. Lint: `npm run lint`
+3. Run lint/typecheck/tests/coverage/build: `npm run lint && npm run typecheck && npm test && npm run test:coverage:check && npm run build`
 
 ## License
 
