@@ -33,9 +33,12 @@ jobs:
       - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5; pin 11)
         run: npm install -g npm@11
       - name: Install
-        run: npm ci || npm install
-      - run: npm run build --if-present
+        run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
       - run: npm test
+      - run: npm run test:coverage:check
+      - run: npm run build
       - name: Configure git identity
         run: |
           git config user.name "Mark Stuart"

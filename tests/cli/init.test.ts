@@ -36,15 +36,33 @@ describe('runInit', () => {
     expect(config.includeDeprecated).toBe(false);
   });
 
-  it('should include headers in config when provided', async () => {
+  it('should replace literal header values with env placeholders in generated config', async () => {
     const { runInit } = await import(/* webpackChunkName: "cli-init" */ '../../src/cli/init.js');
+    const environmentName = 'GRAPHQL_AGENT_AUTHORIZATION';
+    const authorizationPlaceholder = `Bearer \${${environmentName}}`;
 
     const config = await runInit({
       endpoint: 'https://example.com/graphql',
       header: ['Authorization: Bearer test123'],
     });
 
-    expect(config.headers).toEqual({ Authorization: 'Bearer test123' });
+    expect(config.headers).toEqual({ Authorization: authorizationPlaceholder });
+  });
+
+  it('should not write literal auth secrets to config files', async () => {
+    const { runInit } = await import(/* webpackChunkName: "cli-init" */ '../../src/cli/init.js');
+    const environmentName = 'GRAPHQL_AGENT_AUTHORIZATION';
+    const authorizationPlaceholder = `Bearer \${${environmentName}}`;
+
+    await runInit({
+      endpoint: 'https://example.com/graphql',
+      header: ['Authorization: Bearer test123'],
+      output: 'test-config.json',
+    });
+
+    const writtenConfig = mockWriteFileSync.mock.calls[0]?.[1] as string;
+    expect(writtenConfig).not.toContain('test123');
+    expect(writtenConfig).toContain(authorizationPlaceholder);
   });
 
   it('should write config to file when output is specified', async () => {
