@@ -23,6 +23,13 @@ export default [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      'unicorn/consistent-arrow-return-style': 'off',
+    },
+  },
+  {
+    files: ['src/**/index.ts', 'stylelint.config.mjs'],
+    rules: {
+      'unicorn/no-barrel-files': 'off',
     },
   },
   {
