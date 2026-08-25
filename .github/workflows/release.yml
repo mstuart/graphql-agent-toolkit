@@ -2,7 +2,8 @@ name: Release
 
 # Manual release: run from the Actions tab (or `gh workflow run release.yml -f bump=patch`).
 # Publishes to npm with provenance via OIDC trusted publishing — no NPM_TOKEN secret.
-# One-time per package: npmjs.com -> package -> Settings -> Trusted Publisher -> GitHub Actions.
+# One-time per package: protect the `npm-release` GitHub environment with required reviewers,
+# then configure it in npmjs.com -> package -> Settings -> Trusted Publisher -> GitHub Actions.
 
 on:
   workflow_dispatch:
@@ -21,6 +22,8 @@ permissions: {}
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
+    environment: npm-release
     permissions:
       contents: write
       id-token: write
