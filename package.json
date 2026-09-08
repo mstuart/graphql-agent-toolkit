@@ -99,10 +99,10 @@
     "eslint-plugin-promise": "^7.3.0",
     "eslint-plugin-sonarjs": "^4.2.0",
     "eslint-plugin-storybook": "^10.5.7",
-    "eslint-plugin-unicorn": "^73.0.0",
+    "eslint-plugin-unicorn": "^74.0.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "globals": "^17.9.0",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^5.0.0",
     "graphql": "^16.12.0",
     "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.8.1",
@@ -114,7 +114,7 @@
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "ultracite": "7.10.7",
-    "vitest": "^4.0.18"
+    "vitest": "^5.0.0"
   },
   "overrides": {
     "esbuild": "^0.28.1"
