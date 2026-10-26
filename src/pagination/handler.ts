@@ -176,12 +176,15 @@ const executeRelayPaginated = async ({
   variables,
 }: PaginationExecutionContext): Promise<PaginatedResult> => {
   const allItems: unknown[] = [];
-  let cursor: string | null = null;
+  let cursor: string | null = typeof variables.after === 'string' ? variables.after : null;
+  const requestedCursors = new Set<string | null>();
+  let canFetchMore = true;
   let startCursor: string | null = null;
   let hasMore = true;
   let pageCount = 0;
 
-  while (hasMore && (pageCount === 0 || Boolean(cursor)) && pageCount < maxPages) {
+  while (hasMore && canFetchMore && pageCount < maxPages) {
+    requestedCursors.add(cursor);
     const pageVariables: Record<string, unknown> = {
       ...variables,
       first: pageSize,
@@ -219,8 +222,9 @@ const executeRelayPaginated = async ({
     }
 
     hasMore = hasNextPage;
+    canFetchMore = Boolean(endCursor) && !requestedCursors.has(endCursor);
     // The cursor is loop-carried state and is also returned to the caller.
-    // eslint-disable-next-line sonarjs/no-redundant-assignments
+
     cursor = endCursor;
     pageCount += 1;
   }
@@ -249,12 +253,12 @@ const executeOffsetPaginated = async ({
   variables,
 }: PaginationExecutionContext): Promise<PaginatedResult> => {
   const allItems: unknown[] = [];
-  let currentOffset = 0;
   let hasMore = true;
   let pageCount = 0;
 
   // Detect whether to use limit/offset or skip/take
   const useSkipTake = operation.includes('$skip') && operation.includes('$take');
+  let currentOffset = Number((useSkipTake ? variables.skip : variables.offset) ?? 0);
 
   while (hasMore && pageCount < maxPages) {
     const pageVariables: Record<string, unknown> = { ...variables };
@@ -304,6 +308,16 @@ export const executePaginated = async (
   const style = config?.style ?? 'auto';
   const pageSize = config?.pageSize ?? DEFAULT_PAGE_SIZE;
   const maxPages = config?.maxPages ?? DEFAULT_MAX_PAGES;
+  if (
+    !Number.isSafeInteger(pageSize) ||
+    pageSize <= 0 ||
+    !Number.isSafeInteger(maxPages) ||
+    maxPages < 0
+  ) {
+    throw new RangeError(
+      'pageSize must be a positive safe integer and maxPages a non-negative safe integer',
+    );
+  }
 
   if (style === 'relay' || (style === 'auto' && isRelayOperation(operation))) {
     return executeRelayPaginated({ executor, maxPages, operation, pageSize, variables });

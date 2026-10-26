@@ -94,7 +94,12 @@ export const summarizeResponse = (
 
       const result: Record<string, unknown> = {};
       for (const [key, currentValue] of Object.entries(value as Record<string, unknown>)) {
-        result[key] = summarize(currentValue, depth + 1);
+        Object.defineProperty(result, key, {
+          configurable: true,
+          enumerable: true,
+          value: summarize(currentValue, depth + 1),
+          writable: true,
+        });
       }
       return result;
     }
