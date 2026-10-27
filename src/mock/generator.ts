@@ -1,3 +1,4 @@
+import { getOperationAST, Kind, parse } from 'graphql';
 import { unwrapType } from '../operations/variables.js';
 import { GraphQLExecutor } from '../mcp/executor.js';
 import type { ParsedSchema, SchemaField, TypeReference } from '../types/index.js';
@@ -10,6 +11,18 @@ export interface MockConfig {
 
 const DEFAULT_ARRAY_LENGTH = 3;
 const DEFAULT_MAX_DEPTH = 3;
+
+const validateConfig = (config?: MockConfig): void => {
+  const limits = [
+    config?.arrayLength ?? DEFAULT_ARRAY_LENGTH,
+    config?.maxDepth ?? DEFAULT_MAX_DEPTH,
+  ];
+  for (const value of limits) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new RangeError('Mock arrayLength and maxDepth must be non-negative safe integers');
+    }
+  }
+};
 
 /**
  * Simple deterministic hash from a string.
@@ -223,6 +236,7 @@ export const generateMockData = (
   typeName: string,
   config?: MockConfig,
 ): Record<string, unknown> => {
+  validateConfig(config);
   const seed = config?.seed ?? 0;
   const arrayLength = config?.arrayLength ?? DEFAULT_ARRAY_LENGTH;
   const maxDepth = config?.maxDepth ?? DEFAULT_MAX_DEPTH;
@@ -244,11 +258,14 @@ export const generateMockData = (
 /**
  * Extract the root field name from a GraphQL operation string.
  */
-const extractRootFieldName = (operation: string): string | null => {
-  // Match the first field after the opening brace of the operation
-  // e.g., "query UserQuery($id: ID!) {\n  user(id: $id) {\n..."
-  const match = operation.match(/\{\s*(?<fieldName>\w+)/u);
-  return match?.groups?.fieldName ?? null;
+const extractRootFieldName = (operation: string): { name: string; responseName: string } | null => {
+  const definition = getOperationAST(parse(operation));
+  const field = definition?.selectionSet.selections.find(
+    (selection) => selection.kind === Kind.FIELD,
+  );
+  return field
+    ? { name: field.name.value, responseName: field.alias?.value ?? field.name.value }
+    : null;
 };
 
 /**
@@ -320,6 +337,7 @@ const isListField = (schema: ParsedSchema, fieldName: string): boolean => {
  * Implements the same interface as GraphQLExecutor.
  */
 export const createMockExecutor = (schema: ParsedSchema, config?: MockConfig): GraphQLExecutor => {
+  validateConfig(config);
   const mockExecutor = Object.create(GraphQLExecutor.prototype) as GraphQLExecutor;
 
   // Override the execute method
@@ -327,15 +345,17 @@ export const createMockExecutor = (schema: ParsedSchema, config?: MockConfig): G
     operation: string,
   ): Promise<string> => {
     // Parse the operation to find the root field name and its return type
-    const rootFieldName = extractRootFieldName(operation);
-    if (!rootFieldName) {
+    const rootField = extractRootFieldName(operation);
+    if (!rootField) {
       return JSON.stringify({ data: null });
     }
+
+    const { name: rootFieldName, responseName } = rootField;
 
     // Find the return type from the schema
     const returnTypeName = findReturnTypeName(schema, rootFieldName);
     if (!returnTypeName) {
-      return JSON.stringify({ data: { [rootFieldName]: null } });
+      return JSON.stringify({ data: { [responseName]: null } });
     }
 
     // Check if it's a scalar return type
@@ -345,7 +365,7 @@ export const createMockExecutor = (schema: ParsedSchema, config?: MockConfig): G
         index: 0,
         seed: config?.seed ?? 0,
       });
-      return JSON.stringify({ data: { [rootFieldName]: scalarValue } }, null, 2);
+      return JSON.stringify({ data: { [responseName]: scalarValue } }, null, 2);
     }
 
     // Check if the field returns a list
@@ -361,11 +381,11 @@ export const createMockExecutor = (schema: ParsedSchema, config?: MockConfig): G
           }),
         );
       }
-      return JSON.stringify({ data: { [rootFieldName]: items } }, null, 2);
+      return JSON.stringify({ data: { [responseName]: items } }, null, 2);
     }
 
     const mockData = generateMockData(schema, returnTypeName, config);
-    return JSON.stringify({ data: { [rootFieldName]: mockData } }, null, 2);
+    return JSON.stringify({ data: { [responseName]: mockData } }, null, 2);
   };
 
   return mockExecutor;

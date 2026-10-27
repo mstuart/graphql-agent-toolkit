@@ -242,7 +242,11 @@ describe('executePaginated - Relay', () => {
     });
 
     const mockExecutor = {
-      execute: vi.fn().mockResolvedValue(pageResponse),
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce(pageResponse.replace('cursorN', 'cursor1'))
+        .mockResolvedValueOnce(pageResponse.replace('cursorN', 'cursor2'))
+        .mockResolvedValueOnce(pageResponse.replace('cursorN', 'cursor3')),
     } as unknown as GraphQLExecutor;
 
     const operation = `query Users($first: Int, $after: String) {
