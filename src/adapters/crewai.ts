@@ -41,7 +41,7 @@ const namedTypeToJsonSchema = (
   const required: string[] = [];
   for (const field of namedType.inputFields) {
     properties[field.name] = convertType(field.type, schema);
-    if (field.type.kind === 'NON_NULL') {
+    if (field.type.kind === 'NON_NULL' && field.defaultValue === null) {
       required.push(field.name);
     }
   }
@@ -118,7 +118,7 @@ const buildArgumentsSchema = (
 
   for (const argument of field.args) {
     properties[argument.name] = typeReferenceToJsonSchema(argument.type, schema);
-    if (argument.type.kind === 'NON_NULL') {
+    if (argument.type.kind === 'NON_NULL' && argument.defaultValue === null) {
       required.push(argument.name);
     }
   }
@@ -156,7 +156,7 @@ export const createCrewAITools = (
         args_schema: argumentsSchema,
         description,
         func: async (parameters: Record<string, unknown>): Promise<string> => {
-          const op = buildOperation(schema, field.name, { maxDepth });
+          const op = buildOperation(schema, field.name, { maxDepth, operationType: 'query' });
           return executor.execute(op.operation, parameters);
         },
         name: toolName,
@@ -176,7 +176,7 @@ export const createCrewAITools = (
           args_schema: argumentsSchema,
           description,
           func: async (parameters: Record<string, unknown>): Promise<string> => {
-            const op = buildOperation(schema, field.name, { maxDepth });
+            const op = buildOperation(schema, field.name, { maxDepth, operationType: 'mutation' });
             return executor.execute(op.operation, parameters);
           },
           name: toolName,

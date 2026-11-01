@@ -1,29 +1,30 @@
 import { z } from 'zod';
 import { unwrapType } from './operations/variables.js';
-import type { ParsedSchema, TypeRef as TypeReference } from './types/index.js';
+import type { ParsedSchema, SchemaArgument, TypeRef as TypeReference } from './types/index.js';
 
 const withGraphQLNullability = (zodType: z.ZodType, isNullable: boolean): z.ZodType =>
   isNullable ? zodType.nullish() : zodType;
 
-/**
- * Maps a GraphQL TypeRef to a Zod schema while preserving GraphQL nullability.
- * Nullable GraphQL values accept null or omission. NON_NULL values reject both.
- */
-export const typeReferenceToZod = (
+interface ConversionContext {
+  inputObjects: Map<string, z.ZodType>;
+  isNullable: boolean;
+}
+
+const convertTypeReference = (
   typeReference: TypeReference,
   schema: ParsedSchema,
-  isNullable = true,
+  { inputObjects, isNullable }: ConversionContext,
 ): z.ZodType => {
   if (typeReference.kind === 'NON_NULL') {
     if (!typeReference.ofType) {
       return z.unknown();
     }
-    return typeReferenceToZod(typeReference.ofType, schema, false);
+    return convertTypeReference(typeReference.ofType, schema, { inputObjects, isNullable: false });
   }
 
   if (typeReference.kind === 'LIST') {
     const itemSchema = typeReference.ofType
-      ? typeReferenceToZod(typeReference.ofType, schema)
+      ? convertTypeReference(typeReference.ofType, schema, { inputObjects, isNullable: true })
       : z.unknown();
     return withGraphQLNullability(z.array(itemSchema), isNullable);
   }
@@ -39,11 +40,24 @@ export const typeReferenceToZod = (
     }
 
     if (namedType && namedType.kind === 'INPUT_OBJECT') {
-      const shape: Record<string, z.ZodType> = {};
-      for (const field of namedType.inputFields) {
-        shape[field.name] = typeReferenceToZod(field.type, schema);
+      const cached = inputObjects.get(typeName);
+      if (cached) {
+        return withGraphQLNullability(cached, isNullable);
       }
-      return withGraphQLNullability(z.object(shape), isNullable);
+      // Reuse the same lazy identity so JSON Schema exporters can emit refs.
+      const inputObject = z.lazy(() => {
+        const shape: Record<string, z.ZodType> = {};
+        for (const field of namedType.inputFields) {
+          const fieldSchema = convertTypeReference(field.type, schema, {
+            inputObjects,
+            isNullable: true,
+          });
+          shape[field.name] = field.defaultValue === null ? fieldSchema : fieldSchema.optional();
+        }
+        return z.object(shape);
+      });
+      inputObjects.set(typeName, inputObject);
+      return withGraphQLNullability(inputObject, isNullable);
     }
   }
 
@@ -53,7 +67,10 @@ export const typeReferenceToZod = (
       return withGraphQLNullability(z.string(), isNullable);
     }
     case 'Int': {
-      return withGraphQLNullability(z.number().int(), isNullable);
+      return withGraphQLNullability(
+        z.number().int().min(-2_147_483_648).max(2_147_483_647),
+        isNullable,
+      );
     }
     case 'Float': {
       return withGraphQLNullability(z.number(), isNullable);
@@ -65,4 +82,22 @@ export const typeReferenceToZod = (
       return withGraphQLNullability(z.unknown(), isNullable);
     }
   }
+};
+
+/**
+Preserve GraphQL nullability while sharing recursive input object schemas.
+*/
+export const typeReferenceToZod = (
+  typeReference: TypeReference,
+  schema: ParsedSchema,
+  isNullable = true,
+): z.ZodType =>
+  convertTypeReference(typeReference, schema, { inputObjects: new Map(), isNullable });
+
+/**
+A non-null argument with a default may be omitted, but may not be null.
+*/
+export const argumentToZod = (argument: SchemaArgument, schema: ParsedSchema): z.ZodType => {
+  const converted = typeReferenceToZod(argument.type, schema);
+  return argument.defaultValue === null ? converted : converted.optional();
 };
