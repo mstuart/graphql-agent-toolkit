@@ -323,7 +323,7 @@ The `AgentToolkitConfig` object accepts:
 
 ### Operations
 
-- `buildOperation(schema, fieldName, options?)` -- Generate a GraphQL operation string with variables
+- `buildOperation(schema, fieldName, options?)` -- Generate a GraphQL operation string with variables. Set `options.operationType` to `query` or `mutation` to select the root explicitly when both use the same field name.
 
 ### MCP
 

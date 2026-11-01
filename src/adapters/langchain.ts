@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { buildOperation } from '../operations/index.js';
-import { typeReferenceToZod } from '../zod.js';
+import { argumentToZod } from '../zod.js';
 import { unwrapType } from '../operations/variables.js';
 import type {
   ParsedSchema,
@@ -50,7 +50,7 @@ const namedTypeToJsonSchema = (
   const required: string[] = [];
   for (const field of namedType.inputFields) {
     properties[field.name] = convertType(field.type, schema);
-    if (field.type.kind === 'NON_NULL') {
+    if (field.type.kind === 'NON_NULL' && field.defaultValue === null) {
       required.push(field.name);
     }
   }
@@ -124,7 +124,7 @@ const buildJsonSchema = (field: SchemaField, schema: ParsedSchema): Record<strin
 
   for (const argument of field.args) {
     properties[argument.name] = typeReferenceToJsonSchema(argument.type, schema);
-    if (argument.type.kind === 'NON_NULL') {
+    if (argument.type.kind === 'NON_NULL' && argument.defaultValue === null) {
       required.push(argument.name);
     }
   }
@@ -149,7 +149,7 @@ const buildZodSchema = (
   const shape: Record<string, z.ZodType> = {};
 
   for (const argument of field.args) {
-    shape[argument.name] = typeReferenceToZod(argument.type, schema);
+    shape[argument.name] = argumentToZod(argument, schema);
   }
 
   return z.object(shape);
@@ -204,7 +204,7 @@ export const createLangChainTools = (
       description,
       func: async (input: string): Promise<string> => {
         const variables = input ? JSON.parse(input) : {};
-        const op = buildOperation(schema, field.name, { maxDepth });
+        const op = buildOperation(schema, field.name, { maxDepth, operationType });
         return executor.execute(op.operation, variables);
       },
       name: toolName,
@@ -234,7 +234,7 @@ export const createStructuredTools = (
     return {
       description,
       func: async (input: Record<string, unknown>): Promise<string> => {
-        const op = buildOperation(schema, field.name, { maxDepth });
+        const op = buildOperation(schema, field.name, { maxDepth, operationType });
         return executor.execute(op.operation, input);
       },
       name: toolName,

@@ -17,6 +17,7 @@ export interface GeneratedOperation {
 
 export interface BuildOperationOptions {
   maxDepth?: number;
+  operationType?: 'query' | 'mutation';
   includeDeprecated?: boolean;
 }
 
@@ -65,6 +66,11 @@ const buildSelectionSet = (typeName: string, context: SelectionContext): string 
     // Only include scalar fields to break the cycle
     const scalarFields = type.fields
       .filter((field) => !field.isDeprecated || isDeprecatedIncluded)
+      .filter((field) =>
+        field.args.every(
+          (argument) => !isRequired(argument.type) || argument.defaultValue !== null,
+        ),
+      )
       .filter((f) => isScalarLike(schema, f));
 
     if (scalarFields.length === 0) {
@@ -77,7 +83,11 @@ const buildSelectionSet = (typeName: string, context: SelectionContext): string 
 
   visited.add(typeName);
 
-  const fields = type.fields.filter((field) => !field.isDeprecated || isDeprecatedIncluded);
+  const fields = type.fields
+    .filter((field) => !field.isDeprecated || isDeprecatedIncluded)
+    .filter((field) =>
+      field.args.every((argument) => !isRequired(argument.type) || argument.defaultValue !== null),
+    );
   const lines: string[] = [];
 
   for (const field of fields) {
@@ -109,6 +119,26 @@ const buildSelectionSet = (typeName: string, context: SelectionContext): string 
 
 const capitalize = (input: string): string => input.charAt(0).toUpperCase() + input.slice(1);
 
+const resolveRootField = (
+  schema: ParsedSchema,
+  name: string,
+  preferredType?: 'query' | 'mutation',
+): { rootField: SchemaField; operationType: 'query' | 'mutation' } => {
+  const operationTypes: ('query' | 'mutation')[] = preferredType
+    ? [preferredType]
+    : ['query', 'mutation'];
+  for (const operationType of operationTypes) {
+    const rootName = operationType === 'query' ? schema.queryType : schema.mutationType;
+    const rootField = rootName
+      ? schema.types.get(rootName)?.fields.find((field) => field.name === name)
+      : undefined;
+    if (rootField) {
+      return { operationType, rootField };
+    }
+  }
+  throw new Error(`Field "${name}" not found in schema query or mutation types`);
+};
+
 export const buildOperation = (
   schema: ParsedSchema,
   rootFieldName: string,
@@ -117,28 +147,11 @@ export const buildOperation = (
   const maxDepth = options?.maxDepth ?? 2;
   const isDeprecatedIncluded = options?.includeDeprecated ?? false;
 
-  // Look up the field in query type first, then mutation type
-  let operationType: 'query' | 'mutation' = 'query';
-  let rootField: SchemaField | undefined;
-
-  const queryType = schema.types.get(schema.queryType);
-  if (queryType) {
-    rootField = queryType.fields.find((f) => f.name === rootFieldName);
-  }
-
-  if (!rootField && schema.mutationType) {
-    const mutationType = schema.types.get(schema.mutationType);
-    if (mutationType) {
-      rootField = mutationType.fields.find((f) => f.name === rootFieldName);
-      if (rootField) {
-        operationType = 'mutation';
-      }
-    }
-  }
-
-  if (!rootField) {
-    throw new Error(`Field "${rootFieldName}" not found in schema query or mutation types`);
-  }
+  const { rootField, operationType } = resolveRootField(
+    schema,
+    rootFieldName,
+    options?.operationType,
+  );
 
   const operationName = `${capitalize(rootFieldName)}${capitalize(operationType)}`;
 
@@ -146,13 +159,17 @@ export const buildOperation = (
   const variables: VariableDefinition[] = rootField.args.map((argument) => ({
     description: argument.description,
     name: argument.name,
-    required: isRequired(argument.type),
+    required: isRequired(argument.type) && argument.defaultValue === null,
     type: typeReferenceToString(argument.type),
   }));
 
   // Build the variable definitions string for the operation
   const variableDefinitions = variables
-    .map((variable) => `$${variable.name}: ${variable.type}`)
+    .map((variable, index) => {
+      const defaultValue = rootField.args[index]?.defaultValue;
+      const suffix = typeof defaultValue === 'string' ? ` = ${defaultValue}` : '';
+      return `$${variable.name}: ${variable.type}${suffix}`;
+    })
     .join(', ');
   const variableDefs = variables.length > 0 ? `(${variableDefinitions})` : '';
 
@@ -175,7 +192,9 @@ export const buildOperation = (
           visited: new Set(),
         })
       : '';
-  const selectionSet = nestedSelection ? ` ${nestedSelection}` : '';
+  const selectionSet = isScalarLike(schema, rootField)
+    ? ''
+    : ` ${nestedSelection || '{ __typename }'}`;
 
   const operation = `${operationType} ${operationName}${variableDefs} {\n  ${rootFieldName}${argumentsPassing}${selectionSet}\n}`;
 

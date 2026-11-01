@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { buildOperation } from '../operations/index.js';
-import { typeReferenceToZod } from '../zod.js';
+import { argumentToZod } from '../zod.js';
 import type { ParsedSchema, SchemaField } from '../types/index.js';
 import type { GraphQLExecutor } from '../mcp/executor.js';
 
@@ -24,7 +24,7 @@ const buildParametersSchema = (
   const shape: Record<string, z.ZodType> = {};
 
   for (const argument of field.args) {
-    shape[argument.name] = typeReferenceToZod(argument.type, schema);
+    shape[argument.name] = argumentToZod(argument, schema);
   }
 
   return z.object(shape);
@@ -52,7 +52,7 @@ export const createVercelAITools = (
       tools[toolName] = {
         description,
         execute: async (input: Record<string, unknown>): Promise<string> => {
-          const op = buildOperation(schema, field.name, { maxDepth });
+          const op = buildOperation(schema, field.name, { maxDepth, operationType: 'query' });
           return executor.execute(op.operation, input);
         },
         parameters,
@@ -71,7 +71,7 @@ export const createVercelAITools = (
         tools[toolName] = {
           description,
           execute: async (input: Record<string, unknown>): Promise<string> => {
-            const op = buildOperation(schema, field.name, { maxDepth });
+            const op = buildOperation(schema, field.name, { maxDepth, operationType: 'mutation' });
             return executor.execute(op.operation, input);
           },
           parameters,

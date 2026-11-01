@@ -27,7 +27,7 @@ export const summarizeResponse = (
   config?: Partial<SummaryConfig>,
 ): { summary: unknown; metadata: SummaryMetadata } => {
   const resolvedConfig = { ...DEFAULT_CONFIG, ...config };
-  const originalSize = JSON.stringify(data).length;
+  const originalSize = JSON.stringify(data)?.length ?? 0;
   let isTruncated = false;
 
   const countItems = (value: unknown): number => {

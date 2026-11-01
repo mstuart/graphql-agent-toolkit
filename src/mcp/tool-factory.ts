@@ -1,5 +1,5 @@
 import { buildOperation } from '../operations/index.js';
-import { typeReferenceToZod } from '../zod.js';
+import { argumentToZod } from '../zod.js';
 import type { z } from 'zod';
 import type { ParsedSchema, SchemaField } from '../types/index.js';
 import type { GraphQLExecutor } from './executor.js';
@@ -23,7 +23,7 @@ const buildInputSchema = (field: SchemaField, schema: ParsedSchema): Record<stri
   const shape: Record<string, z.ZodType> = {};
 
   for (const argument of field.args) {
-    shape[argument.name] = typeReferenceToZod(argument.type, schema);
+    shape[argument.name] = argumentToZod(argument, schema);
   }
 
   return shape;
@@ -56,7 +56,11 @@ export const createToolsFromSchema = (
       tools.push({
         description,
         execute: async (parameters: Record<string, unknown>) => {
-          const op = buildOperation(schema, field.name, { includeDeprecated, maxDepth });
+          const op = buildOperation(schema, field.name, {
+            includeDeprecated,
+            maxDepth,
+            operationType: 'query',
+          });
           return executor.execute(op.operation, parameters);
         },
         inputSchema,
@@ -81,7 +85,11 @@ export const createToolsFromSchema = (
         tools.push({
           description,
           execute: async (parameters: Record<string, unknown>) => {
-            const op = buildOperation(schema, field.name, { includeDeprecated, maxDepth });
+            const op = buildOperation(schema, field.name, {
+              includeDeprecated,
+              maxDepth,
+              operationType: 'mutation',
+            });
             return executor.execute(op.operation, parameters);
           },
           inputSchema,
